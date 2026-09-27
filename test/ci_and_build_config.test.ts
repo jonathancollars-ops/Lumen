@@ -49,7 +49,7 @@ if (fs.existsSync(buildAndroidWorkflowPath)) {
   assert(content.includes('actions/checkout@v4'), 'Includes checkout action v4');
   assert(content.includes('actions/setup-node@v4') && content.includes('node-version: 20'), 'Sets up Node.js 20');
   assert(content.includes('actions/setup-java@v4') && content.includes('17'), 'Sets up OpenJDK 17 (Temurin)');
-  assert(content.includes('android-actions/setup-android@v3'), 'Sets up Android SDK');
+  assert(content.includes('android-actions/setup-android@v4'), 'Sets up Android SDK');
   assert(content.includes('npx tsc --noEmit'), 'Enforces strict TypeScript verification before build');
   assert(content.includes('npm test'), 'Executes automated test harness before build');
   assert(content.includes('chmod +x android/gradlew'), 'Grants execute permissions to Gradle wrapper');
