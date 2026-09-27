@@ -179,6 +179,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             examWeekMode: Boolean(savedSettings.examWeekMode),
             soundEnabled: savedSettings.soundEnabled !== false,
             hapticsEnabled: savedSettings.hapticsEnabled !== false,
+            currentSemesterId: savedSettings.currentSemesterId,
           }
         : { theme: safeTheme, fullscreen: false, pomodoroFocusMin: 25, pomodoroBreakMin: 5, pomodoroLongBreakMin: 15, defaultPassGrade: 7.0, examWeekMode: false, soundEnabled: true, hapticsEnabled: true };
 
@@ -188,6 +189,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             xp: Number(savedGamification.xp) || 0,
             level: Number(savedGamification.level) || 1,
             unlockedAchievements: Array.isArray(savedGamification.unlockedAchievements) ? savedGamification.unlockedAchievements : [],
+            claimedAchievements: Array.isArray(savedGamification.claimedAchievements) ? savedGamification.claimedAchievements : [],
+            processedEventIds: Array.isArray(savedGamification.processedEventIds) ? savedGamification.processedEventIds : [],
             totalFocusMinutes: Number(savedGamification.totalFocusMinutes) || 0,
           }
         : { xp: 0, level: 1, unlockedAchievements: [], totalFocusMinutes: 0 };
@@ -198,6 +201,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             currentStreak: Number(savedStreak.currentStreak) || 0,
             longestStreak: Number(savedStreak.longestStreak) || 0,
             lastStudyDate: typeof savedStreak.lastStudyDate === 'string' ? savedStreak.lastStudyDate : '',
+            bestStreak: savedStreak.bestStreak,
+            totalStudyDays: savedStreak.totalStudyDays,
           }
         : { currentStreak: 0, longestStreak: 0, lastStudyDate: '' };
 
@@ -454,8 +459,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updated = exists
       ? events.map(e => e.id === event.id ? event : e)
       : [...events, event];
+    const saved = await StorageService.saveEvents(updated);
+    if (!saved) throw new Error('Não foi possível salvar o evento.');
     setEvents(updated);
-    await StorageService.saveEvents(updated);
+    await NotificationService.scheduleEventNotifications(event);
   };
 
   const updateAIConfig = async (config: AIConfig): Promise<boolean> => {

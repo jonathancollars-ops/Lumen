@@ -105,18 +105,18 @@ async function runSemverAndAutoUpdateTests() {
     assert(!isNewerVersion('v3.4.0-build-54', '3.4.0'), 'v3.4.0-build-54 is NOT newer than official 3.4.0');
     assert(isNewerVersion('v3.4.0-build-54', 'v3.4.0-build-53'), 'v3.4.0-build-54 is newer than v3.4.0-build-53');
 
-    // Default currentVersion (APP_VERSION = '3.5.1') & False-Positive Prevention
-    assertEqual(APP_VERSION, '3.5.1', 'APP_VERSION constant is exactly 3.5.1');
-    assert(!isNewerVersion('3.5.1'), 'Same version 3.5.1 does not trigger update');
+    // Default currentVersion (APP_VERSION = '3.5.2') & False-Positive Prevention
+    assertEqual(APP_VERSION, '3.5.2', 'APP_VERSION constant is exactly 3.5.2');
+    assert(!isNewerVersion('3.5.2'), 'Same version 3.5.2 does not trigger update');
     assert(!isNewerVersion('3.4.0'), 'Older version 3.4.0 does not trigger update');
     assert(!isNewerVersion('3.3.1'), 'Older version 3.3.1 does not trigger update');
-    assert(!isNewerVersion('v3.5.1-build-55'), 'Remote build tag does NOT trigger false-positive update for official 3.5.1 users');
-    assert(!isNewerVersion('v3.5.1-build-99'), 'Remote build 99 does NOT trigger update for official 3.5.1 release');
-    assert(isNewerVersion('3.5.2'), 'Newer patch 3.5.2 triggers update for 3.5.1');
-    assert(isNewerVersion('3.6.1'), 'Newer minor 3.6.1 triggers update for 3.5.1');
-    assert(isNewerVersion('4.0.0'), 'Newer major 4.0.0 triggers update for 3.5.1');
-    assert(isNewerVersion('v3.5.2-build-1'), 'Newer patch with build tag triggers update for 3.5.1');
-    assert(isNewerVersion('v3.5.1', '3.5.1-build-54'), 'Official 3.5.1 triggers upgrade for test build 54 user');
+    assert(!isNewerVersion('v3.5.2-build-55'), 'Remote build tag does NOT trigger false-positive update for official 3.5.2 users');
+    assert(!isNewerVersion('v3.5.2-build-99'), 'Remote build 99 does NOT trigger update for official 3.5.2 release');
+    assert(isNewerVersion('3.5.3'), 'Newer patch 3.5.3 triggers update for 3.5.2');
+    assert(isNewerVersion('3.6.1'), 'Newer minor 3.6.1 triggers update for 3.5.2');
+    assert(isNewerVersion('4.0.0'), 'Newer major 4.0.0 triggers update for 3.5.2');
+    assert(isNewerVersion('v3.5.3-build-1'), 'Newer patch with build tag triggers update for 3.5.2');
+    assert(isNewerVersion('v3.5.2', '3.5.2-build-54'), 'Official 3.5.2 triggers upgrade for test build 54 user');
   }
 
   // --- 3. Strict SemVer Increment Rules (bumpVersion) ---
@@ -142,12 +142,12 @@ async function runSemverAndAutoUpdateTests() {
   console.log('\n--- 4. AppUpdateService Mock Tests & Ignored Versions ---');
   {
     // Current version assertion
-    assertEqual(AppUpdateService.getCurrentVersion(), '3.5.1', 'Current version is 3.5.1');
+    assertEqual(AppUpdateService.getCurrentVersion(), '3.5.2', 'Current version is 3.5.2');
 
     // State persistence & ignore version
-    await AppUpdateService.ignoreVersion('3.5.1');
+    await AppUpdateService.ignoreVersion('3.5.2');
     const state = await AppUpdateService.getUpdateState();
-    assertEqual(state.ignoredVersion, '3.5.1', 'Ignored version persisted correctly');
+    assertEqual(state.ignoredVersion, '3.5.2', 'Ignored version persisted correctly');
 
     // Reset state
     await AppUpdateService.saveUpdateState({ ignoredVersion: undefined, lastCheckedAt: undefined });

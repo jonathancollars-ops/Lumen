@@ -11,6 +11,15 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.5.2] - 2026-09-27
+### 🐛 Correções e Melhorias na Agenda
+- **Tratamento de Erros:** Adicionado alerta visual quando ocorre uma falha ao salvar um evento.
+- **Data Locked:** Melhorada a lógica de edição de eventos para não travar a data quando o usuário está editando um evento existente.
+- **Ordenação:** Corrigida a ordenação cronológica de eventos (utilizando minutos) e a lógica de duração de blocos que cruzam a meia-noite no schedule planner.
+- **Testes e Gamificação:** Suporte a novos campos de estado no AppContext (semestre atual, streaks, achievements) e adição de testes robustos (agenda edit regressions e mocks aprimorados de UI).
+
+---
+
 ## [3.5.1] - 2026-09-14
 ### 🐛 Correções e Melhorias
 - **Cronômetro e Pomodoro:** Corrigido o problema onde o tempo de estudo era perdido ao fechar o aplicativo ou deixá-lo em segundo plano. Implementada arquitetura de persistência (*Timestamp Diff*) e sincronização com o ciclo de vida do app.

@@ -110,14 +110,14 @@ export const ExamModal: React.FC<Props> = ({ visible, onClose, onSave, subjects,
 
   // Automatically select the first upcoming class day when subject changes
   useEffect(() => {
-    if (visible && upcomingClassDates.length > 0) {
+    if (visible && !isDateLocked && upcomingClassDates.length > 0) {
       // If current date is not in valid class days or empty, select first upcoming
       const currentDayOfWeek = date ? new Date(date + 'T12:00:00').getDay() : -1;
       if (!date || !validDaysOfWeek.includes(currentDayOfWeek)) {
         setDate(upcomingClassDates[0].dateStr);
       }
     }
-  }, [selectedSubjectId, upcomingClassDates, visible]);
+  }, [selectedSubjectId, upcomingClassDates, visible, isDateLocked]);
 
   useEffect(() => {
     if (visible) {

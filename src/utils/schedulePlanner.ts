@@ -113,9 +113,7 @@ export function calculateDaySchedule(
   const validEvents = (Array.isArray(events) ? events : []).filter(e => Boolean(e));
 
   const sortedEvents = [...validEvents].sort((a, b) => {
-    const aStart = a.startTime || '00:00';
-    const bStart = b.startTime || '00:00';
-    return aStart.localeCompare(bStart);
+    return timeToMinutes(a.startTime || '08:00') - timeToMinutes(b.startTime || '08:00');
   });
 
   // 2. Mapear blocos ocupados
@@ -125,7 +123,7 @@ export function calculateDaySchedule(
     const startMins = timeToMinutes(startTimeStr);
     let endMins = evt.endTime ? timeToMinutes(evt.endTime) : startMins + 60;
     if (endMins <= startMins) {
-      endMins = startMins + 60;
+      endMins += 24 * 60;
     }
     const endTimeStr = evt.endTime || minutesToTime(endMins);
     const duration = endMins - startMins;

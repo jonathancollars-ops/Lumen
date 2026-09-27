@@ -5,6 +5,7 @@ import { AIParsingService, ParsingContext } from '../src/services/AIParsingServi
 import { mockAsyncStorage, memoryStore } from './setup_env';
 import * as fs from 'fs';
 import * as path from 'path';
+import { APP_VERSION } from '../src/utils/version';
 
 let testCount = 0;
 let passCount = 0;
@@ -463,10 +464,11 @@ async function runSecurityTests() {
     const origFetch = globalThis.fetch;
 
     // Mock release without .apk asset (only html_url) and with malicious name/notes
+    const nextVersion = `${Number(APP_VERSION.split('.')[0]) + 1}.0.0-build-12`;
     globalThis.fetch = async () => ({
       ok: true,
       json: async () => ({
-        tag_name: 'v3.5.1-build-12',
+        tag_name: `v${nextVersion}`,
         name: 'Release 3.5.1 <script>alert("xss")</script>',
         body: 'Notas de atualização <b>com tags</b> e <iframe src="evil.com"></iframe>',
         html_url: 'https://github.com/jonathancollars-ops/organiza/releases/tag/v3.5.1',
@@ -479,7 +481,7 @@ async function runSecurityTests() {
     const info = await AppUpdateService.checkForUpdates(true);
     assert(info !== null, 'Update info retrieved');
     assert(info!.hasUpdate === true, 'Update detected');
-    assert(info!.latestVersion === '3.5.1-build-12', 'Version with build extracted');
+    assert(info!.latestVersion === nextVersion, 'Version with build extracted');
     assert(!info!.releaseName!.includes('<script>'), 'Release name sanitized');
     assert(!info!.releaseNotes!.includes('<iframe>'), 'Release notes stripped of dangerous tags');
     assert(info!.downloadUrl === 'https://github.com/jonathancollars-ops/organiza/releases/tag/v3.5.1', 'Fallback to release html_url because no .apk asset exists');

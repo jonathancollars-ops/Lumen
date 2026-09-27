@@ -91,6 +91,9 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
 
   React.useEffect(() => {
     if (visible) {
+      setShowCalendar(false);
+      setClockModalVisible(false);
+      setCustomAlertVal('');
       if (initialEvent) {
         setTitle(initialEvent.title);
         setCategory(initialEvent.category);
@@ -100,7 +103,7 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
         
         if (initialEvent.endTime) {
            let end = parseTime(initialEvent.endTime);
-           if (end < start) end += 1440; // crossed midnight
+           if (end <= start) end += 1440; // crossed midnight or a full day
            setDurationMinutes(end - start);
         } else {
            setDurationMinutes(60);
@@ -180,13 +183,14 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
 
     const safeRecurrenceInterval = recurrence === 'monthly'
       ? SecuritySanitizer.sanitizeInteger(recurrenceInterval, 1, 12, 1)
-      : undefined;
+      : recurrence === 'custom_interval' ? initialEvent?.recurrenceInterval : undefined;
 
     const safeRecurrenceMonthDay = recurrence === 'monthly'
       ? SecuritySanitizer.sanitizeInteger(recurrenceMonthDay, 1, 31, 15)
-      : undefined;
+      : recurrence === 'custom_interval' ? initialEvent?.recurrenceMonthDay : undefined;
 
     const newEvent: AppEvent = {
+      ...initialEvent,
       id: initialEvent ? initialEvent.id : generateId('evt'),
       title: sanitizedTitle,
       category,
@@ -195,7 +199,8 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
       endTime: endTimeStr,
       recurrence,
       recurrenceInterval: safeRecurrenceInterval,
-      recurrenceUnit: recurrence === 'monthly' ? 'months' : undefined,
+      recurrenceUnit: recurrence === 'monthly' ? 'months' : recurrence === 'custom_interval' ? initialEvent?.recurrenceUnit : undefined,
+      recurrenceDays: recurrence === 'weekly' ? initialEvent?.recurrenceDays : undefined,
       recurrenceMonthDay: safeRecurrenceMonthDay,
       alerts: safeAlerts,
       isCompleted: initialEvent ? initialEvent.isCompleted : false,

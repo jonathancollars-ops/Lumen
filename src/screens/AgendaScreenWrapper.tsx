@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Modal, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { View, Modal, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -50,12 +50,12 @@ export const AgendaScreenWrapper = ({ onFabPress }: { onFabPress?: () => void })
       if (event) {
         await addOrUpdateEvent(event);
       }
-    } catch (e) {
-      console.warn('Erro ao salvar evento:', e);
-    } finally {
       setEventModalVisible(false);
       setExamVisible(false);
       setEditingEvent(null);
+    } catch (e) {
+      console.warn('Erro ao salvar evento:', e);
+      Alert.alert('Não foi possível salvar', 'Seus dados continuam no formulário. Tente novamente.');
     }
   };
 
@@ -183,7 +183,7 @@ export const AgendaScreenWrapper = ({ onFabPress }: { onFabPress?: () => void })
         theme={theme}
         initialEvent={editingEvent}
         initialDate={selectedDate || undefined}
-        isDateLocked={!!selectedDate}
+        isDateLocked={!!selectedDate && !editingEvent}
       />
 
       {/* Pending Attendance Modal */}

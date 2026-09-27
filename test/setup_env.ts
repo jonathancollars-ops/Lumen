@@ -122,6 +122,8 @@ export const mockReactNative = {
   Modal: 'Modal',
   Dimensions: { get: () => ({ width: 375, height: 812 }) },
   TextInput: 'TextInput',
+  KeyboardAvoidingView: 'KeyboardAvoidingView',
+  Switch: 'Switch',
   AppState: mockAppState,
   Share: {
     share: async (content: any) => ({ action: 'sharedAction' }),
@@ -165,6 +167,7 @@ export const mockNotifications = {
 (mockAsyncStorage as any).default = mockAsyncStorage;
 
 Module.prototype.require = function (id: string) {
+  if (id === '@react-native-community/slider') return 'Slider';
   if (id === 'expo-linking') {
     return mockExpoLinking;
   }
