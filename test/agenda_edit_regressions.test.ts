@@ -28,6 +28,12 @@ function harness(component: any, initialProps: any, context?: any) {
       }];
     },
     useMemo(factory: any) { return factory(); },
+    useCallback(fn: any) { return fn; },
+    useRef(initial: any) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index];
+    },
     useContext() { return context; },
     useEffect(effect: any, deps: any[]) {
       const index = cursor++;

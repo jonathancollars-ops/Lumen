@@ -11,6 +11,15 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.6.0] - 2026-09-28
+### ☁️ Sincronização em Nuvem (Google Drive - Fase 1)
+- **Google Drive Sync:** Integração com a Google Drive REST API v3 utilizando a pasta isolada `appDataFolder` do próprio usuário, sem custos e sem necessidade de banco de dados centralizado.
+- **Autenticação Segura:** Fluxo OAuth2 com escopo estrito (`drive.appdata`) e armazenamento criptografado de tokens via `expo-secure-store`.
+- **Sincronização com Debounce:** Motor de sincronização automático que detecta alterações locais (matérias, eventos, notas, faltas) e envia para a nuvem de forma silenciosa e resiliente com debounce de 5s.
+- **Interface de Ajustes:** Nova seção no `SettingsModal` com status visual da última sincronização, conexão/desconexão e sincronização manual.
+
+---
+
 ## [3.5.2] - 2026-09-27
 ### 🐛 Correções e Melhorias na Agenda
 - **Tratamento de Erros:** Adicionado alerta visual quando ocorre uma falha ao salvar um evento.

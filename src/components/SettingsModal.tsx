@@ -15,10 +15,11 @@ import {
   Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemeType, AppSettings, Semester, BackupData, AIConfig, AppUpdateInfo } from '../types';
+import { ThemeType, AppSettings, Semester, BackupData, AIConfig, AppUpdateInfo, GoogleDriveSyncStatus } from '../types';
 import { getThemeColors, getContrastTextColor } from '../theme';
 import { StorageService } from '../services/storage';
 import { AppUpdateService } from '../services/AppUpdateService';
+import { GoogleDriveSyncService } from '../services/GoogleDriveSyncService';
 import { generateId } from '../utils/id';
 import { APP_VERSION } from '../utils/version';
 import * as Haptics from 'expo-haptics';
@@ -76,6 +77,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Backup state
   const [backupJsonText, setBackupJsonText] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+
+  // Google Drive Cloud Sync State
+  const [syncStatus, setSyncStatus] = useState<GoogleDriveSyncStatus | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+
+  const fetchSyncStatus = React.useCallback(async () => {
+    try {
+      const status = await GoogleDriveSyncService.getSyncStatus();
+      setSyncStatus(status);
+    } catch (e) {
+      console.warn('Erro ao obter status do Google Drive:', e);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (visible && activeSubTab === 'backup') {
+      fetchSyncStatus();
+    }
+  }, [visible, activeSubTab, fetchSyncStatus]);
 
   // Settings local state with defensive null-coalescing
   const [fullscreen, setFullscreen] = useState(settings?.fullscreen === true);
@@ -248,6 +269,88 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const formatRelativeSyncTime = (isoString?: string): string => {
+    if (!isoString) return 'Nunca sincronizado';
+    try {
+      const syncDate = new Date(isoString).getTime();
+      if (isNaN(syncDate)) return 'Data desconhecida';
+      const diffSeconds = Math.max(0, Math.floor((Date.now() - syncDate) / 1000));
+      if (diffSeconds < 60) return 'Agora mesmo';
+      const diffMinutes = Math.floor(diffSeconds / 60);
+      if (diffMinutes === 1) return 'Há 1 minuto';
+      if (diffMinutes < 60) return `Há ${diffMinutes} minutos`;
+      const diffHours = Math.floor(diffMinutes / 60);
+      if (diffHours === 1) return 'Há 1 hora';
+      if (diffHours < 24) return `Há ${diffHours} horas`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return 'Há 1 dia';
+      return `Há ${diffDays} dias`;
+    } catch {
+      return 'Data desconhecida';
+    }
+  };
+
+  const handleSyncNow = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsSyncing(true);
+    try {
+      const result = await GoogleDriveSyncService.sincronizar();
+      if (result.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await fetchSyncStatus();
+        Alert.alert(
+          'Sincronização Concluída!',
+          'Seus dados foram salvos com sucesso na nuvem segura do Google Drive.'
+        );
+      } else {
+        Alert.alert('Aviso de Sincronização', result.message || 'Falha ao sincronizar.');
+      }
+    } catch (error: any) {
+      Alert.alert('Erro ao Sincronizar', error?.message || 'Falha na conexão com o Google Drive.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleConnectGoogle = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsConnectingCloud(true);
+    try {
+      await GoogleDriveSyncService.connectWithGoogle();
+      await GoogleDriveSyncService.sincronizar();
+      await fetchSyncStatus();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        'Conta Conectada!',
+        'Sua conta do Google Drive foi conectada com sucesso e um backup inicial foi realizado.'
+      );
+    } catch (error: any) {
+      Alert.alert('Erro ao Conectar', error?.message || 'Não foi possível conectar com o Google Drive.');
+    } finally {
+      setIsConnectingCloud(false);
+    }
+  };
+
+  const handleDisconnectGoogle = () => {
+    Alert.alert(
+      'Desconectar Google Drive',
+      'Deseja desconectar sua conta do Google Drive? Seus dados locais permanecerão salvos no aparelho.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desconectar',
+          style: 'destructive',
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            await GoogleDriveSyncService.disconnect();
+            await fetchSyncStatus();
+            Alert.alert('Desconectado', 'Sua conta do Google Drive foi desconectada.');
+          }
+        }
+      ]
+    );
+  };
+
   const handleCheckForUpdates = async () => {
     Haptics.selectionAsync();
     setIsCheckingUpdate(true);
@@ -294,7 +397,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {[
             { id: 'geral', label: '⚙️ Geral' },
             { id: 'ia', label: '✨ IA & Tutor' },
-            { id: 'backup', label: '💾 Backup' }
+            { id: 'backup', label: '☁️ Backup & Nuvem' }
           ].map(t => {
             const isSelected = activeSubTab === t.id;
             return (
@@ -597,9 +700,215 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </>
           ) : (
             <>
-              <Text style={styles.sectionTitle}>Backup e Restauração de Dados</Text>
+              {/* ======================================================= */}
+              {/* SEÇÃO 1: Sincronização em Nuvem (Google Drive)         */}
+              {/* ======================================================= */}
+              <Text style={styles.sectionTitle}>Sincronização em Nuvem (Google Drive)</Text>
               <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 14, lineHeight: 18 }}>
-                Faça o backup de todos os seus eventos, matérias, tarefas e faltas em formato JSON seguro.
+                Mantenha seus dados sempre salvos e sincronizados automaticamente na nuvem segura do Google Drive.
+              </Text>
+
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: syncStatus?.isConnected ? colors.primary : colors.border,
+                    borderWidth: 1.5,
+                    padding: 16,
+                    borderRadius: 16,
+                    marginBottom: 20,
+                  }
+                ]}
+              >
+                {syncStatus?.isConnected ? (
+                  <>
+                    {/* Header: User Profile / Email & Disconnect */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
+                        <View
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 22,
+                            backgroundColor: colors.primaryLight,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginRight: 12,
+                          }}
+                        >
+                          <Text style={{ fontSize: 20 }}>👤</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: colors.text, fontWeight: '800', fontSize: 14 }} numberOfLines={1}>
+                            {syncStatus.userEmail || 'Conta Google Conectada'}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                            <View
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 4,
+                                backgroundColor: colors.success,
+                                marginRight: 6,
+                              }}
+                            />
+                            <Text style={{ color: colors.success, fontSize: 12, fontWeight: '700' }}>
+                              Conectado à nuvem
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.smallBtn,
+                          {
+                            borderColor: colors.danger,
+                            borderWidth: 1,
+                            backgroundColor: colors.dangerLight,
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                          }
+                        ]}
+                        onPress={handleDisconnectGoogle}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={{ color: colors.danger, fontSize: 12, fontWeight: '700' }}>
+                          Desconectar
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Sync Status Badge */}
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: colors.surfaceSubtle,
+                        padding: 12,
+                        borderRadius: 12,
+                        marginBottom: 14,
+                        borderWidth: 1,
+                        borderColor: colors.borderSubtle,
+                      }}
+                    >
+                      <Text style={{ fontSize: 20, marginRight: 10 }}>☁️</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          Status da Sincronização
+                        </Text>
+                        <Text style={{ color: colors.text, fontSize: 13, fontWeight: '800', marginTop: 2 }}>
+                          Última sincronização: {formatRelativeSyncTime(syncStatus.lastSyncTime)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Sincronizar Agora Button */}
+                    <TouchableOpacity
+                      style={[
+                        styles.backupBtn,
+                        {
+                          backgroundColor: colors.primary,
+                          flexDirection: 'row',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          paddingVertical: 12,
+                          opacity: isSyncing ? 0.7 : 1,
+                        }
+                      ]}
+                      onPress={handleSyncNow}
+                      disabled={isSyncing}
+                      activeOpacity={0.8}
+                    >
+                      {isSyncing ? (
+                        <>
+                          <ActivityIndicator size="small" color={getContrastTextColor(colors.primary)} style={{ marginRight: 8 }} />
+                          <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
+                            Sincronizando...
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={{ fontSize: 16, marginRight: 8 }}>🔄</Text>
+                          <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
+                            Sincronizar Agora
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    {/* Disconnected State */}
+                    <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                      <View
+                        style={{
+                          width: 56,
+                          height: 56,
+                          borderRadius: 28,
+                          backgroundColor: colors.surfaceSubtle,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 12,
+                        }}
+                      >
+                        <Text style={{ fontSize: 28 }}>☁️</Text>
+                      </View>
+                      <Text style={{ color: colors.text, fontWeight: '800', fontSize: 16, marginBottom: 6, textAlign: 'center' }}>
+                        Nenhum backup em nuvem ativo
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16, paddingHorizontal: 10 }}>
+                        Conecte sua conta Google para sincronizar automaticamente seus dados em segundo plano e mantê-los seguros na pasta oculta AppData.
+                      </Text>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.backupBtn,
+                          {
+                            backgroundColor: colors.primary,
+                            width: '100%',
+                            flexDirection: 'row',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            paddingVertical: 12,
+                            opacity: isConnectingCloud ? 0.7 : 1,
+                          }
+                        ]}
+                        onPress={handleConnectGoogle}
+                        disabled={isConnectingCloud}
+                        activeOpacity={0.8}
+                      >
+                        {isConnectingCloud ? (
+                          <>
+                            <ActivityIndicator size="small" color={getContrastTextColor(colors.primary)} style={{ marginRight: 8 }} />
+                            <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
+                              Conectando...
+                            </Text>
+                          </>
+                        ) : (
+                          <>
+                            <Text style={{ fontSize: 16, marginRight: 8 }}>🔐</Text>
+                            <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
+                              Conectar com Google
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+              </View>
+
+              {/* Divider between Cloud and Local Backup */}
+              <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 20 }} />
+
+              {/* ======================================================= */}
+              {/* SEÇÃO 2: Backup Local em JSON                           */}
+              {/* ======================================================= */}
+              <Text style={styles.sectionTitle}>Backup Local em Arquivo JSON</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 14, lineHeight: 18 }}>
+                Faça o backup de todos os seus eventos, matérias, tarefas e faltas em formato JSON seguro para transferir manualmente.
               </Text>
 
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
@@ -629,7 +938,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 style={[
                   styles.input,
                   {
-                    height: 180,
+                    height: 160,
                     textAlignVertical: 'top',
                     backgroundColor: colors.surface,
                     color: colors.text,

@@ -438,3 +438,36 @@ export interface AppUpdateState {
   ignoredVersion?: string;
   lastPromptDismissedAt?: number;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Lumen 3.5: Google Drive Cloud Sync & Security Hardening
+// ─────────────────────────────────────────────────────────────
+
+export interface GoogleDriveTokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  userEmail?: string;
+  tokenType?: string;
+  scope?: string;
+}
+
+export interface GoogleDriveSyncStatus {
+  isConnected: boolean;
+  userEmail?: string;
+  lastSyncTime?: string;
+  cloudFileExists?: boolean;
+  cloudFileModifiedTime?: string;
+}
+
+export interface GoogleDriveSyncResult {
+  success: boolean;
+  message?: string;
+  timestamp?: string;
+  fileId?: string;
+  details?: {
+    eventsCount?: number;
+    subjectsCount?: number;
+    tasksCount?: number;
+  };
+}

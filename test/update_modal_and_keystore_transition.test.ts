@@ -73,30 +73,30 @@ async function runKeystoreTransitionAndSemverTests() {
 
     // When remote is a new patch or minor release:
     assert(
-      compareSemver('3.5.2', '3.4.0') === 1,
-      'Patch update 3.5.2 is newer than 3.4.0'
+      compareSemver('3.6.0', '3.4.0') === 1,
+      'Patch update 3.6.0 is newer than 3.4.0'
     );
     assert(
-      compareSemver('v3.5.2', '3.4.0') === 1,
-      'Minor update 3.5.2 is newer than 3.4.0'
+      compareSemver('v3.6.0', '3.4.0') === 1,
+      'Minor update 3.6.0 is newer than 3.4.0'
     );
     assert(
-      compareSemver('v3.5.2-build-1', '3.4.0') === 1,
-      'Patch build 3.5.2-build-1 is newer than 3.4.0'
+      compareSemver('v3.6.0-build-1', '3.4.0') === 1,
+      'Patch build 3.6.0-build-1 is newer than 3.4.0'
     );
   });
 
   // Test 2: Project-wide version consistency
-  await test('2. Version 3.5.2 consistency across package.json, app.json and version.ts', () => {
+  await test('2. Version 3.6.0 consistency across package.json, app.json and version.ts', () => {
     const pkgPath = path.join(projectRoot, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    assert(pkg.version === '3.5.2', `package.json version is 3.5.2 (got ${pkg.version})`);
+    assert(pkg.version === '3.6.0', `package.json version is 3.6.0 (got ${pkg.version})`);
 
     const appJsonPath = path.join(projectRoot, 'app.json');
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
-    assert(appJson.expo.version === '3.5.2', `app.json expo.version is 3.5.2 (got ${appJson.expo.version})`);
+    assert(appJson.expo.version === '3.6.0', `app.json expo.version is 3.6.0 (got ${appJson.expo.version})`);
 
-    assert(APP_VERSION === '3.5.2', `src/utils/version.ts APP_VERSION is 3.5.2 (got ${APP_VERSION})`);
+    assert(APP_VERSION === '3.6.0', `src/utils/version.ts APP_VERSION is 3.6.0 (got ${APP_VERSION})`);
   });
 
   // Test 3: AppUpdateModal.tsx content and keystore notice verification

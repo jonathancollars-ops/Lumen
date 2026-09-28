@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import * as Haptics from 'expo-haptics';
 import { StorageService } from '../services/storage';
 import { AttendanceService } from '../services/AttendanceService';
 import { NotificationService } from '../services/notifications';
 import { CourseCRService } from '../services/CourseCRService';
+import { GoogleDriveSyncService } from '../services/GoogleDriveSyncService';
 import { 
   AppEvent, 
   ThemeType, 
@@ -17,7 +18,8 @@ import {
   GamificationData, 
   AIConfig,
   ActiveTimerState,
-  SavedTimerState 
+  SavedTimerState,
+  GoogleDriveSyncResult 
 } from '../types';
 import { 
   TimerService, 
@@ -83,6 +85,10 @@ export interface AppContextData {
   addOrUpdateSubject: (subject: Subject) => Promise<void>;
   addOrUpdateEvent: (event: AppEvent) => Promise<void>;
   updateAIConfig: (config: AIConfig) => Promise<boolean>;
+
+  // Cloud Sync (Google Drive)
+  triggerDebouncedCloudSync: () => void;
+  syncCloudNow: () => Promise<GoogleDriveSyncResult>;
 }
 
 const AppContext = createContext<AppContextData | undefined>(undefined);
@@ -260,9 +266,71 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // ==========================================================================
+  // GOOGLE DRIVE BACKGROUND AUTO-SYNC (5-SECOND DEBOUNCE) & STARTUP CHECK
+  // ==========================================================================
+  const cloudSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isCloudSyncingRef = useRef<boolean>(false);
+
+  const triggerDebouncedCloudSync = useCallback(() => {
+    if (cloudSyncTimeoutRef.current) {
+      clearTimeout(cloudSyncTimeoutRef.current);
+    }
+    cloudSyncTimeoutRef.current = setTimeout(async () => {
+      try {
+        const status = await GoogleDriveSyncService.getSyncStatus();
+        if (status.isConnected && !isCloudSyncingRef.current) {
+          isCloudSyncingRef.current = true;
+          await GoogleDriveSyncService.sincronizar();
+        }
+      } catch (err) {
+        console.warn('[AppContext] Falha na sincronização automática em nuvem (Google Drive):', err);
+      } finally {
+        isCloudSyncingRef.current = false;
+      }
+    }, 5000);
+  }, []);
+
+  const syncCloudNow = async (): Promise<GoogleDriveSyncResult> => {
+    if (cloudSyncTimeoutRef.current) {
+      clearTimeout(cloudSyncTimeoutRef.current);
+      cloudSyncTimeoutRef.current = null;
+    }
+    isCloudSyncingRef.current = true;
+    try {
+      return await GoogleDriveSyncService.sincronizar();
+    } finally {
+      isCloudSyncingRef.current = false;
+    }
+  };
+
   useEffect(() => {
-    // Carrega dados de forma assíncrona na montagem, não travando a thread principal.
-    loadData();
+    let isMounted = true;
+
+    const initializeWithCloudCheck = async () => {
+      // 1. Carrega dados locais de forma assíncrona na montagem
+      await loadData();
+
+      // 2. Verificação na inicialização do app: checar se há alterações na nuvem
+      try {
+        const cloudResult = await GoogleDriveSyncService.checkAndSyncOnStartup();
+        if (cloudResult && cloudResult.success && isMounted) {
+          // Nuvem tinha alterações mais recentes que foram restauradas; recarrega estado local
+          await loadData();
+        }
+      } catch (cloudStartupErr) {
+        console.warn('[AppContext] Falha ao verificar nuvem na inicialização (não bloqueante):', cloudStartupErr);
+      }
+    };
+
+    initializeWithCloudCheck();
+
+    return () => {
+      isMounted = false;
+      if (cloudSyncTimeoutRef.current) {
+        clearTimeout(cloudSyncTimeoutRef.current);
+      }
+    };
   }, []);
 
   const handleThemeToggle = async () => {
@@ -362,12 +430,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updatedEvents = events.map(e => e.id === eventId ? { ...e, isCompleted: !e.isCompleted } : e);
     setEvents(updatedEvents);
     await StorageService.saveEvents(updatedEvents);
+    triggerDebouncedCloudSync();
   };
 
   const toggleTaskCompletion = async (taskId: string) => {
     const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t);
     setTasks(updatedTasks);
     await StorageService.saveTasks(updatedTasks);
+    triggerDebouncedCloudSync();
   };
 
   const deleteEvent = async (eventId: string) => {
@@ -375,6 +445,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setEvents(updatedEvents);
     await StorageService.saveEvents(updatedEvents);
     await NotificationService.cancelEventNotifications(eventId);
+    triggerDebouncedCloudSync();
   };
 
   const updateAttendance = async (record: AttendanceRecord) => {
@@ -384,12 +455,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       : [...attendances, record];
     setAttendances(updated);
     await StorageService.saveAttendances(updated);
+    triggerDebouncedCloudSync();
   };
 
   const archiveSubject = async (subjectId: string) => {
     const updated = subjects.map(s => s.id === subjectId ? { ...s, isArchived: true } : s);
     setSubjects(updated);
     await StorageService.saveSubjects(updated);
+    triggerDebouncedCloudSync();
   };
 
   const archiveSubjects = async (subjectIds: string[]) => {
@@ -398,6 +471,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const updated = subjects.map(s => idSet.has(s.id) ? { ...s, isArchived: true } : s);
     setSubjects(updated);
     await StorageService.saveSubjects(updated);
+    triggerDebouncedCloudSync();
   };
 
   const deleteSubject = async (subjectId: string) => {
@@ -443,6 +517,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       StorageService.deleteSubject(subjectId),
       NotificationService.cancelSubjectNotifications(subjectId, removedEventIds),
     ]);
+    triggerDebouncedCloudSync();
   };
 
   const addOrUpdateSubject = async (subject: Subject) => {
@@ -452,6 +527,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       : [...subjects, subject];
     setSubjects(updated);
     await StorageService.saveSubjects(updated);
+    triggerDebouncedCloudSync();
   };
 
   const addOrUpdateEvent = async (event: AppEvent) => {
@@ -463,6 +539,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!saved) throw new Error('Não foi possível salvar o evento.');
     setEvents(updated);
     await NotificationService.scheduleEventNotifications(event);
+    triggerDebouncedCloudSync();
   };
 
   const updateAIConfig = async (config: AIConfig): Promise<boolean> => {
@@ -512,7 +589,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     deleteSubject,
     addOrUpdateSubject,
     addOrUpdateEvent,
-    updateAIConfig
+    updateAIConfig,
+    triggerDebouncedCloudSync,
+    syncCloudNow
   };
 
   return (

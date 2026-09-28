@@ -995,6 +995,7 @@ export class CourseCRService {
         semester?: number | string;
       }>;
       baselineCR?: number;
+      officialCR?: number;
     },
     existingData?: CourseProgressData
   ): CourseProgressData {
