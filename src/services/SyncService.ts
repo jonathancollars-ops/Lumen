@@ -249,7 +249,13 @@ export class SyncService {
           const endTime = item.endTime || '10:00';
           const alerts = item.alerts && item.alerts.length > 0 ? item.alerts : [10080, 1440];
 
-          const normalizeTitle = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+          const normalizeTitle = (t: string) => t
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
           const normItem = normalizeTitle(item.title);
 
           const getExamCode = (t: string) => {
@@ -259,7 +265,7 @@ export class SyncService {
           const codeItem = getExamCode(item.title);
           const numsItem = (normItem.match(/\b\d+\b/g) || []).join(',');
 
-          const existingEventIndex = runningEvents.findIndex(e => {
+          let existingEventIndex = runningEvents.findIndex(e => {
             if (e.category !== 'Provas/Trabalhos') return false;
             if (matchedSubject && e.subjectId !== matchedSubject.id) return false;
 
@@ -285,6 +291,19 @@ export class SyncService {
 
             return false;
           });
+
+          // A rescheduling message often uses a shorter title than the original
+          // exam. If it names the same subject and there's only one open exam,
+          // update that exam instead of creating a second calendar entry.
+          const rescheduleText = `${item.title} ${item.description || ''} ${item.rawSummary || ''}`;
+          const isReschedule = item.isReschedule === true || /remarc|adiad|transferid|nova data|outra data/i.test(rescheduleText);
+          if (existingEventIndex === -1 && isReschedule && matchedSubject) {
+            const candidates = runningEvents
+              .map((event, index) => ({ event, index }))
+              .filter(({ event }) => event.category === 'Provas/Trabalhos' &&
+                event.subjectId === matchedSubject.id && !event.isCompleted);
+            if (candidates.length === 1) existingEventIndex = candidates[0].index;
+          }
 
           let examEvent: AppEvent;
 

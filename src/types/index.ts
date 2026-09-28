@@ -243,6 +243,7 @@ export interface AIParsedItem {
   alerts: number[]; // e.g. [10080, 1440]
   rawSummary: string;
   confidence?: number;
+  isReschedule?: boolean;
 }
 
 export interface AIParsingResult {
@@ -341,6 +342,7 @@ export interface CourseProgressData {
   courseName?: string;
   targetCR?: number; // e.g. 8.5
   baselineCR?: number; // CR calculated from past semesters
+  officialCR?: number; // CR/IRA printed on the imported academic transcript
   totalRequiredCredits: number; // e.g. 240
   completedCredits: number; // e.g. 120
   totalRequiredHours?: number; // e.g. 3600

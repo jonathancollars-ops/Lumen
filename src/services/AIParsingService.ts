@@ -167,6 +167,8 @@ Classifique e extraia as informações de acordo com o intent:
 
 REGRAS DE FORMATAÇÃO DOS CAMPOS:
 - "intent": "cancelled_class" | "homework" | "exam" | "none"
+- "isReschedule": true somente quando o professor estiver alterando/remarcando um evento já anunciado; false para uma prova, tarefa ou aula nova.
+- Quando remarcar prova ou trabalho, mantenha o nome e o código da avaliação original (por exemplo, "P1 de Cálculo") sempre que forem identificáveis. A nova data não significa que é uma avaliação nova.
 - "subjectName": Faça correspondência com a lista de matérias cadastradas. Caso não encontre exata, use o nome identificado na mensagem.
 - "title": Título claro (ex: "Aula Cancelada - Cálculo 1", "Entrega Lista 3 - Algoritmos", "Prova P2 - Física I").
 - "description": Detalhes ou orientações extras informadas pelo professor.
@@ -181,6 +183,7 @@ RESPONDA EXCLUSIVAMENTE COM O SEGUINTE FORMATO JSON:
   "items": [
     {
       "intent": "cancelled_class" | "homework" | "exam" | "none",
+      "isReschedule": false,
       "subjectName": "Nome da Matéria",
       "title": "Título do Evento",
       "description": "Detalhes",
@@ -224,6 +227,8 @@ RESPONDA EXCLUSIVAMENTE COM O SEGUINTE FORMATO JSON:
 Analise este histórico escolar/boletim acadêmico em anexo.
 Identifique o Coeficiente de Rendimento (CR / IRA / Média Geral) acumulado e TODAS as disciplinas cursadas ou em andamento (aprovadas, matriculadas/cursando, reprovadas e dispensadas).
 
+A leitura do CR exige cuidado: procure no cabeçalho e no resumo acadêmico o valor explicitamente rotulado CR, CR acumulado, IRA, Coeficiente de Rendimento ou Média Geral. Preserve exatamente esse valor numérico, inclusive casas decimais com vírgula. Não estime nem recalcule o CR usando notas individuais, créditos ou médias de disciplinas. Não confunda horas, créditos, nota de uma disciplina, CR parcial e CR acumulado. Se houver mais de um candidato, use o identificado como acumulado/geral e não escolha uma nota de disciplina. Se o rótulo ou o valor não estiver legível, use null.
+
 Retorne EXCLUSIVAMENTE um JSON estrito contendo:
 {
   "baselineCR": 7.8,
@@ -246,6 +251,7 @@ REGRAS DE CLASSIFICAÇÃO:
 - "credits": quantidade de créditos da disciplina. Se houver apenas carga horária (ex: 60h), divida por 15 (ex: 60h = 4 créditos). Padrão se não informado: 4.
 - "grade": nota final obtida (número decimal de 0.0 a 10.0), ou null se estiver em andamento sem nota.
 - Se não encontrar o CR acumulado, defina "baselineCR" como null.
+- O valor de "baselineCR" deve ser o número lido diretamente do campo oficial do histórico; aceite CRs entre 0 e 10 e nunca substitua o número lido por uma média recalculada.
 Retorne APENAS o JSON, sem markdown ou explicações adicionais.`;
     } else {
       systemPrompt = `Você é o assistente acadêmico do aplicativo Lumen.

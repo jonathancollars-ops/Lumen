@@ -100,12 +100,21 @@ export const DEFAULT_CURRICULUM_TEMPLATE: CourseProgressData = {
   ]
 };
 
+function parseOfficialCR(value: unknown): number | undefined {
+  const normalized = typeof value === 'string' ? value.trim().replace(',', '.') : value;
+  const number = typeof normalized === 'number' ? normalized : Number(normalized);
+  return Number.isFinite(number) && number >= 0 && number <= 10 ? number : undefined;
+}
+
 export class CourseCRService {
   /**
    * Calculates the weighted cumulative Grade Point Average (CR / GPA) from completed subjects.
    * Formula: CR = Sum(Grade * Credits) / Sum(Credits)
    */
   static calculateHistoricalCR(data: CourseProgressData): number {
+    const officialCR = parseOfficialCR(data?.officialCR);
+    if (officialCR !== undefined) return officialCR;
+
     if (!data || !Array.isArray(data.semesters)) {
       return data?.baselineCR || 0;
     }
@@ -626,12 +635,17 @@ export class CourseCRService {
       updatedSemesters = [...safeData.semesters, newSem];
     }
 
-    const newHistoricalCR = this.calculateHistoricalCR({ ...safeData, semesters: updatedSemesters });
+    const newHistoricalCR = this.calculateHistoricalCR({
+      ...safeData,
+      officialCR: undefined,
+      semesters: updatedSemesters
+    });
     const progress = this.calculateDegreeProgress({ ...safeData, semesters: updatedSemesters });
 
     return {
       ...safeData,
       baselineCR: newHistoricalCR,
+      officialCR: undefined,
       semesters: updatedSemesters,
       completedCredits: progress.completedCredits,
       totalRequiredCredits: progress.totalRequiredCredits,
@@ -700,20 +714,15 @@ export class CourseCRService {
       subjects: [...(sem.subjects || [])]
     }));
 
-    let extractedCR: number | null = null;
-    const crMatch = rawText.match(/(?:cr|coeficiente|ira|rendimento|gpa|media geral)[\s:=-]+([0-9]+[.,][0-9]+)/i);
-    if (crMatch && crMatch[1]) {
-      const parsed = parseFloat(crMatch[1].replace(',', '.'));
-      if (!isNaN(parsed) && parsed >= 0 && parsed <= 10) {
-        extractedCR = parsed;
-      }
-    }
+    let extractedCR: number | undefined;
+    const crMatch = rawText.match(/(?:\bcoeficiente(?:\s+de)?(?:\s+rendimento)?\b|\brendimento\b|\bira\b|\bgpa\b|\bcr\b(?!\s*[ée]ditos?)|\bm[eé]dia(?:\s+geral)?\b)\s*(?:(?:acumulad[oa]|geral|do\s+(?:per[ií]odo|curso))\s*)?(?:\([^)]{0,40}\))?\s*[:=\-]\s*(\d{1,2}(?:[.,]\d+)?)/i);
+    extractedCR = parseOfficialCR(crMatch?.[1]);
 
     lines.forEach(line => {
       const isApproved = /aprovado|aprovada|aprov|concluido|concluído|dispensado|dispensa|isento|aproveitado|aproveitamento/i.test(line);
 
       let grade: number | undefined = undefined;
-      const gradeMatches = line.match(/([0-9]{1,2}[.,][0-9]{1,2})/g);
+      const gradeMatches = line.match(/\b([0-9]{1,2}[.,][0-9]{1,2})\b/g);
       if (gradeMatches) {
         for (const match of gradeMatches) {
           const num = parseFloat(match.replace(',', '.'));
@@ -743,7 +752,8 @@ export class CourseCRService {
     const progress = this.calculateDegreeProgress({ ...base, semesters: updatedSemesters });
     return {
       ...base,
-      baselineCR: typeof extractedCR === 'number' ? extractedCR : base.baselineCR,
+      baselineCR: extractedCR ?? base.baselineCR,
+      officialCR: extractedCR ?? parseOfficialCR(base.officialCR),
       semesters: updatedSemesters,
       completedCredits: progress.completedCredits,
       lastUpdated: new Date().toISOString()
@@ -1001,9 +1011,12 @@ export class CourseCRService {
       ? aiResult.subjects
       : (Array.isArray(aiResult?.approvedSubjects) ? aiResult.approvedSubjects : []);
 
-    const baselineCR = (typeof aiResult?.baselineCR === 'number' && !isNaN(aiResult.baselineCR))
-      ? aiResult.baselineCR
-      : base.baselineCR;
+    const baselineCR = parseOfficialCR(aiResult?.baselineCR)
+      ?? parseOfficialCR(aiResult?.officialCR)
+      ?? base.baselineCR;
+    const officialCR = parseOfficialCR(aiResult?.baselineCR)
+      ?? parseOfficialCR(aiResult?.officialCR)
+      ?? parseOfficialCR(base.officialCR);
 
     const unmatchedSubjects: Array<{
       name: string;
@@ -1145,6 +1158,7 @@ export class CourseCRService {
     return {
       ...base,
       baselineCR,
+      officialCR,
       semesters: updatedSemesters,
       completedCredits: progress.completedCredits,
       lastUpdated: new Date().toISOString()
