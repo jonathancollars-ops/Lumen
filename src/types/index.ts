@@ -465,6 +465,7 @@ export interface GoogleDriveSyncResult {
   message?: string;
   timestamp?: string;
   fileId?: string;
+  action?: 'upload' | 'download' | 'none';
   details?: {
     eventsCount?: number;
     subjectsCount?: number;

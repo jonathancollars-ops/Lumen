@@ -29,12 +29,16 @@ import { GroupProjectsModal } from '../components/GroupProjectsModal';
 import { AppUpdateModal } from '../components/AppUpdateModal';
 import { OnboardingModal } from '../components/OnboardingModal';
 
+import { useResponsive } from '../hooks/useResponsive';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+
 const Tab = createBottomTabNavigator();
 
 export function AppNavigator() {
   const { theme, settings, setSettings, gamification, isInitializing, handleThemeToggle, events, subjects, studySessions, attendances, streak, semesters, setSemesters, refreshData, aiConfig, updateAIConfig } = useApp();
   const colors = getThemeColors(theme);
   const insets = useSafeAreaInsets();
+  const { isDesktop } = useResponsive();
 
   // Interceptação de Deep Links (lumen://gemini/...) e integração nativa com Android App Actions
   useDeepLinkHandler({ onActionExecuted: refreshData });
@@ -128,7 +132,7 @@ export function AppNavigator() {
         <TouchableOpacity
           style={[styles.levelHeaderBtn, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
           onPress={() => {
-            Haptics.selectionAsync();
+            try { Haptics.selectionAsync(); } catch {}
             setAchievementsModalVisible(true);
           }}
           activeOpacity={0.7}
@@ -191,56 +195,233 @@ export function AppNavigator() {
     },
   };
 
+  /**
+   * Componente de navegação adaptativo:
+   * Em telas > 1024px (desktop / Tauri Windows): renderiza Sidebar fixa e elegante à esquerda.
+   * Em telas <= 1024px (mobile / tablet estreito): renderiza Bottom Tabs suspensa clássica.
+   */
+  const ResponsiveTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation }) => {
+    if (isDesktop) {
+      return (
+        <View style={[styles.sidebarContainer, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
+          {/* Header do Menu Lateral Desktop */}
+          <View style={styles.sidebarHeader}>
+            <View style={[styles.logoIconBadge, { backgroundColor: colors.primaryLight, width: 38, height: 38, borderRadius: 12 }]}>
+              <Text style={{ fontSize: 20 }}>🎓</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.title, { color: colors.text, fontSize: 19, letterSpacing: -0.5 }]}>Lumen</Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>Workspace Acadêmico</Text>
+            </View>
+          </View>
+
+          {/* Badge Modo Provas */}
+          {settings.examWeekMode && (
+            <View style={[styles.sidebarExamBadge, { backgroundColor: colors.dangerLight, borderColor: colors.danger }]}>
+              <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '800' }}>🎯 MODO PROVAS ATIVO</Text>
+            </View>
+          )}
+
+          {/* Card Gamificação / Nível no Sidebar */}
+          <TouchableOpacity
+            style={[styles.sidebarGamificationCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              setAchievementsModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>
+                Nv. {gamification?.level || 1} 🎓
+              </Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>
+                {gamification?.xp || 0} XP
+              </Text>
+            </View>
+            <View style={[styles.sidebarXpTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
+              <View
+                style={[
+                  styles.sidebarXpFill,
+                  {
+                    backgroundColor: colors.primary,
+                    width: `${Math.min(100, Math.max(10, ((gamification?.xp || 0) % 100)))}%`
+                  }
+                ]}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Lista de Navegação Vertical */}
+          <View style={styles.sidebarNavList}>
+            <Text style={[styles.sidebarSectionLabel, { color: colors.textSecondary }]}>NAVEGAÇÃO</Text>
+            {state.routes.map((route, index) => {
+              const isFocused = state.index === index;
+              const onPress = () => {
+                try { Haptics.selectionAsync(); } catch {}
+                const event = navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                });
+                if (!isFocused && !event.defaultPrevented) {
+                  navigation.navigate(route.name);
+                }
+              };
+
+              let icon = '📅';
+              if (route.name === 'Estudos') icon = '⏱️';
+              else if (route.name === 'Desempenho') icon = '🎯';
+              else if (route.name === 'Faltas') icon = '📊';
+              else if (route.name === 'Notas') icon = '🎓';
+
+              return (
+                <TouchableOpacity
+                  key={route.key}
+                  onPress={onPress}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.sidebarNavItem,
+                    isFocused
+                      ? { backgroundColor: colors.primaryLight, borderColor: colors.primary }
+                      : { backgroundColor: 'transparent', borderColor: 'transparent' }
+                  ]}
+                >
+                  {isFocused && <View style={[styles.sidebarActiveBar, { backgroundColor: colors.primary }]} />}
+                  <Text style={{ fontSize: 18, marginRight: 12 }}>{icon}</Text>
+                  <Text
+                    style={[
+                      styles.sidebarNavLabel,
+                      { color: isFocused ? colors.primary : colors.text, fontWeight: isFocused ? '800' : '600' }
+                    ]}
+                  >
+                    {route.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Rodapé do Sidebar com Ações e Ajustes */}
+          <View style={[styles.sidebarFooter, { borderTopColor: colors.border }]}>
+            <Text style={[styles.sidebarSectionLabel, { color: colors.textSecondary, marginBottom: 8 }]}>FERRAMENTAS</Text>
+            
+            <TouchableOpacity
+              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}
+              onPress={() => setGroupProjectsModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 16, marginRight: 10 }}>👥</Text>
+              <Text style={[styles.sidebarActionText, { color: colors.text }]}>Projetos em Grupo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}
+              onPress={() => setAnalyticsModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 16, marginRight: 10 }}>📈</Text>
+              <Text style={[styles.sidebarActionText, { color: colors.text }]}>Análise & AACC</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}
+              onPress={() => setSettingsModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 16, marginRight: 10 }}>⚙️</Text>
+              <Text style={[styles.sidebarActionText, { color: colors.text }]}>Configurações</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}
+              onPress={handleThemeToggle}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 16, marginRight: 10 }}>
+                {theme === 'dark' ? '🌙' : theme === 'amoled' ? '🖤' : '☀️'}
+              </Text>
+              <Text style={[styles.sidebarActionText, { color: colors.text }]}>
+                {theme === 'dark' ? 'Tema Escuro' : theme === 'amoled' ? 'Tema AMOLED' : 'Tema Claro'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    // Layout Mobile / Tablet estreito (Bottom Tabs)
+    return (
+      <View
+        style={[
+          styles.mobileTabBar,
+          {
+            bottom: insets.bottom > 0 ? insets.bottom : (Platform.OS === 'android' ? 14 : 12),
+            backgroundColor: colors.glassBackground || (isDark ? 'rgba(24, 27, 32, 0.92)' : 'rgba(255, 255, 255, 0.94)'),
+            borderTopColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'),
+            borderColor: colors.hairlineBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'),
+            shadowOpacity: isDark ? 0.35 : 0.12,
+          }
+        ]}
+      >
+        {state.routes.map((route, index) => {
+          const isFocused = state.index === index;
+          const onPress = () => {
+            try { Haptics.selectionAsync(); } catch {}
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          let icon = '';
+          if (route.name === 'Agenda') icon = '📅';
+          else if (route.name === 'Estudos') icon = '⏱️';
+          else if (route.name === 'Desempenho') icon = '🎯';
+          else if (route.name === 'Faltas') icon = '📊';
+          else if (route.name === 'Notas') icon = '🎓';
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              style={styles.mobileTabItem}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: isFocused ? 22 : 19, opacity: isFocused ? 1 : 0.8 }}>{icon}</Text>
+              <Text
+                style={[
+                  styles.mobileTabLabel,
+                  { color: isFocused ? colors.primary : colors.textSecondary }
+                ]}
+              >
+                {route.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <>
       <StatusBar style={theme === 'light' ? 'dark' : 'light'} backgroundColor="transparent" translucent />
       <NavigationContainer theme={navTheme}>
         <Tab.Navigator
-          screenListeners={{
-            tabPress: () => {
-              Haptics.selectionAsync();
-            }
-          }}
-          screenOptions={({ route }) => ({
+          tabBar={props => <ResponsiveTabBar {...props} />}
+          screenOptions={{
+            headerShown: !isDesktop,
             header: () => <CustomHeader />,
-            tabBarActiveTintColor: colors.primary,
-            tabBarInactiveTintColor: colors.textSecondary,
-            tabBarStyle: {
-              position: 'absolute',
-              bottom: insets.bottom > 0 ? insets.bottom : (Platform.OS === 'android' ? 14 : 12),
-              left: 16,
-              right: 16,
-              height: 62,
-              borderRadius: 26,
-              backgroundColor: colors.glassBackground || (isDark ? 'rgba(24, 27, 32, 0.92)' : 'rgba(255, 255, 255, 0.94)'),
-              borderTopWidth: StyleSheet.hairlineWidth,
-              borderTopColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'),
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.hairlineBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'),
-              paddingBottom: Platform.OS === 'ios' ? 8 : 6,
-              paddingTop: 8,
-              elevation: 8,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: isDark ? 0.35 : 0.12,
-              shadowRadius: 14,
+            sceneStyle: {
+              marginLeft: isDesktop ? 260 : 0,
+              backgroundColor: colors.background,
             },
-            tabBarLabelStyle: {
-              fontSize: 11,
-              fontWeight: '600',
-              letterSpacing: 0.1,
-              marginTop: 1,
-            },
-            tabBarIcon: ({ color, size, focused }) => {
-              let icon = '';
-              if (route.name === 'Agenda') icon = '📅';
-              else if (route.name === 'Estudos') icon = '⏱️';
-              else if (route.name === 'Desempenho') icon = '🎯';
-              else if (route.name === 'Faltas') icon = '📊';
-              else if (route.name === 'Notas') icon = '🎓';
-              return <Text style={{ fontSize: focused ? 22 : 19, opacity: focused ? 1 : 0.8 }}>{icon}</Text>;
-            }
-          })}
+          }}
         >
           <Tab.Screen name="Agenda" component={AgendaScreenWrapper} />
           <Tab.Screen name="Estudos" component={StudyScreenWrapper} />
@@ -354,5 +535,131 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Desktop Sidebar Styles
+  sidebarContainer: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 260,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    paddingTop: 24,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+    zIndex: 100,
+    justifyContent: 'space-between',
+  },
+  sidebarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  sidebarExamBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  sidebarGamificationCard: {
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 20,
+  },
+  sidebarXpTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  sidebarXpFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  sidebarNavList: {
+    flex: 1,
+    gap: 4,
+  },
+  sidebarSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    paddingHorizontal: 6,
+  },
+  sidebarNavItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    position: 'relative',
+  },
+  sidebarActiveBar: {
+    position: 'absolute',
+    left: 0,
+    top: 8,
+    bottom: 8,
+    width: 3.5,
+    borderRadius: 2,
+  },
+  sidebarNavLabel: {
+    fontSize: 14,
+    letterSpacing: 0.2,
+  },
+  sidebarFooter: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 16,
+    gap: 6,
+  },
+  sidebarActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sidebarActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Mobile Bottom Tab Bar Styles
+  mobileTabBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    height: 62,
+    borderRadius: 26,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingBottom: Platform.OS === 'ios' ? 8 : 4,
+    paddingTop: 6,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 14,
+    zIndex: 50,
+  },
+  mobileTabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    paddingVertical: 4,
+  },
+  mobileTabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+    marginTop: 2,
   },
 });

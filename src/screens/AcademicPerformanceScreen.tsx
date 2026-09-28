@@ -205,29 +205,60 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
       const fileName = asset.name || fileUri;
       const mimeType = resolveDocumentMimeType(fileName, asset.mimeType);
 
-      // Validação e leitura resiliente de arquivos locais e cache no Android
+      // Validação e leitura resiliente de arquivos locais e cache no Android / Web
       let base64Data = '';
-      try {
+      if (Platform.OS === 'web') {
         try {
-          const fileInfo = await FileSystem.getInfoAsync(fileUri);
-          if (!fileInfo.exists) {
-            console.warn('fileInfo.exists reported false, attempting read directly');
+          const webFile = (asset as any).file;
+          if (webFile) {
+            base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const res = (reader.result as string) || '';
+                resolve(res.includes(',') ? res.split(',')[1] : res);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(webFile);
+            });
+          } else {
+            const resp = await fetch(fileUri);
+            const blob = await resp.blob();
+            base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const res = (reader.result as string) || '';
+                resolve(res.includes(',') ? res.split(',')[1] : res);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
           }
-        } catch (infoErr) {
-          console.warn('getInfoAsync warning (continuing with read):', infoErr);
+        } catch (webErr: any) {
+          throw new Error(`Falha ao ler o arquivo no navegador: ${webErr?.message || 'Arquivo inacessível.'}`);
         }
-
-        base64Data = await FileSystem.readAsStringAsync(fileUri, {
-          encoding: FileSystem.EncodingType.Base64
-        });
-      } catch (readErr: any) {
-        console.warn('First base64 read attempt failed, retrying with raw string fallback:', readErr);
+      } else {
         try {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(fileUri);
+            if (!fileInfo.exists) {
+              console.warn('fileInfo.exists reported false, attempting read directly');
+            }
+          } catch (infoErr) {
+            console.warn('getInfoAsync warning (continuing with read):', infoErr);
+          }
+
           base64Data = await FileSystem.readAsStringAsync(fileUri, {
-            encoding: 'base64' as any
+            encoding: FileSystem.EncodingType.Base64
           });
-        } catch (retryErr: any) {
-          throw new Error(`Falha ao ler o conteúdo do arquivo: ${retryErr?.message || readErr?.message || 'Arquivo inacessível ou sem permissão.'}`);
+        } catch (readErr: any) {
+          console.warn('First base64 read attempt failed, retrying with raw string fallback:', readErr);
+          try {
+            base64Data = await FileSystem.readAsStringAsync(fileUri, {
+              encoding: 'base64' as any
+            });
+          } catch (retryErr: any) {
+            throw new Error(`Falha ao ler o conteúdo do arquivo: ${retryErr?.message || readErr?.message || 'Arquivo inacessível ou sem permissão.'}`);
+          }
         }
       }
 

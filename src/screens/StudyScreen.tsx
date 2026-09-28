@@ -11,7 +11,6 @@ import {
   AppState,
   AppStateStatus
 } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import { Subject, ThemeType, StudyTask, StudySession, StudyStreak, GamificationData, ActiveTimerState, SavedTimerState } from '../types';
 import { getThemeColors, getContrastTextColor } from '../theme';
 import { generateId, getLocalDateString } from '../utils';
@@ -19,6 +18,7 @@ import { StorageService } from '../services/storage';
 import { NotificationService } from '../services/notifications';
 import { TimerService, toActiveTimerState } from '../services/TimerService';
 import { useTimerAppState } from '../hooks/useTimerAppState';
+import { useResponsive } from '../hooks/useResponsive';
 import { useApp, AppContextData } from '../contexts/AppContext';
 import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -53,6 +53,7 @@ export const StudyScreen: React.FC<Props> = ({
   const navigation = useNavigation<any>();
   const colors = getThemeColors(theme);
   const styles = getStyles(colors);
+  const { isDesktop } = useResponsive();
 
   let appContext: AppContextData | null = null;
   try {
@@ -817,9 +818,509 @@ export const StudyScreen: React.FC<Props> = ({
     });
   }, [tasks, selectedFilterSubject]);
 
+  const renderSubjectSelector = (
+    selectedId: string | null,
+    onSelect: (id: string) => void,
+    title = 'Matéria em Foco'
+  ) => (
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Text style={[styles.cardTitle, { color: colors.text }]}>{title}</Text>
+      {subjects.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+          {subjects.map(sub => {
+            const isSelected = selectedId === sub.id;
+            const chipBg = isSelected ? (sub.color || colors.primary) : colors.surfaceSubtle;
+            const textColor = isSelected ? getContrastTextColor(sub.color || colors.primary) : colors.text;
+
+            return (
+              <TouchableOpacity
+                key={sub.id}
+                style={[
+                  styles.subjectChip,
+                  {
+                    backgroundColor: chipBg,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: isSelected ? (sub.color || colors.primary) : colors.border
+                  }
+                ]}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  onSelect(sub.id);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: textColor, fontWeight: '700', fontSize: 13 }}>
+                  {sub.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      ) : (
+        <View style={[styles.noSubjectsCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.borderSubtle }]}>
+          <Text style={{ fontSize: 22, marginBottom: 4 }}>📚</Text>
+          <Text style={[styles.noSubjectsTitle, { color: colors.text }]}>
+            Nenhuma disciplina cadastrada
+          </Text>
+          <Text style={[styles.noSubjectsText, { color: colors.textSecondary }]}>
+            Cadastre suas matérias para vincular horas de foco e manter seu histórico.
+          </Text>
+          {onAddNewSubject && (
+            <TouchableOpacity
+              style={[styles.addSubjectCtaBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onAddNewSubject();
+              }}
+              activeOpacity={0.8}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Cadastrar Nova Matéria"
+              accessibilityHint="Abre o modal para incluir disciplina"
+            >
+              <Text style={[styles.addSubjectCtaBtnText, { color: getContrastTextColor(colors.primary) }]}>
+                + Cadastrar Matéria
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderPomodoroPresets = () => (
+    <View style={styles.presetsContainer}>
+      <Text style={[styles.presetsLabel, { color: colors.textSecondary }]}>⏱️ Duração rápida:</Text>
+      <View style={styles.presetsRow}>
+        {[15, 25, 45, 50, 60].map((presetMin) => {
+          const isPresetSelected = !isBreak && activeFocusMinutes === presetMin;
+          return (
+            <TouchableOpacity
+              key={presetMin}
+              style={[
+                styles.presetChip,
+                {
+                  backgroundColor: isPresetSelected ? colors.primary : colors.surfaceSubtle,
+                  borderColor: isPresetSelected ? colors.primary : colors.border,
+                }
+              ]}
+              onPress={() => handleSelectPreset(presetMin)}
+              activeOpacity={0.7}
+            >
+              <Text style={{
+                color: isPresetSelected ? getContrastTextColor(colors.primary) : colors.text,
+                fontWeight: '700',
+                fontSize: 12
+              }}>
+                {presetMin}m
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  const renderPomodoroTimerVisualizer = () => (
+    <View style={styles.timerContainer}>
+      <View style={styles.activityRingsWrap}>
+        <View style={[styles.ringOuter, { borderColor: colors.primaryLight }]}>
+          <View style={[
+            styles.ringOuter,
+            {
+              borderColor: isBreak ? colors.success : colors.primary,
+              borderLeftColor: 'transparent',
+              borderBottomColor: 'transparent',
+              transform: [{ rotate: `${Math.min(360, Math.round((( (activeFocusMinutes * 60) - timeLeft ) / Math.max(1, (activeFocusMinutes * 60)) ) * 360))}deg` }]
+            }
+          ]} />
+        </View>
+        <View style={[styles.ringInner, { borderColor: (colors.info ? `${colors.info}25` : 'rgba(59, 130, 246, 0.2)') }]}>
+          <View style={[
+            styles.ringInner,
+            {
+              borderColor: colors.info || '#3B82F6',
+              borderTopColor: 'transparent',
+              borderRightColor: 'transparent'
+            }
+          ]} />
+        </View>
+
+        <View style={styles.ringCenter}>
+          <View style={[
+            styles.statePill,
+            {
+              backgroundColor: isBreak ? colors.successLight : colors.primaryLight,
+              borderColor: isBreak ? colors.success : colors.primary
+            }
+          ]}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: isBreak ? colors.success : colors.primary }}>
+              {isBreak ? `☕ Descanso` : `🎯 Foco Total`}
+            </Text>
+          </View>
+          <Text style={[styles.timerText, { color: colors.text }]}>{formatTime(timeLeft)}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+            {activeFocusMinutes} min
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.timerControls}>
+        <TouchableOpacity
+          style={[styles.timerButton, { backgroundColor: colors.primary }]}
+          onPress={toggleTimer}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.timerButtonText, { color: getContrastTextColor(colors.primary) }]}>
+            {isActive ? '⏸️ Pausar' : '▶️ Iniciar Foco'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.timerButton, { backgroundColor: colors.surfaceSubtle, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
+          onPress={resetTimer}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.timerButtonText, { color: colors.text }]}>🔄 Resetar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderDailyOverview = () => (
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 0 }]}>Tempo Hoje</Text>
+        <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 18 }}>
+          {formatTotalTime(todayTotalStudyMs)}
+        </Text>
+      </View>
+
+      {todayTotalStudyMs === 0 ? (
+        <View style={[styles.emptyDailyStudyCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.borderSubtle }]}>
+          <Text style={{ fontSize: 22, marginBottom: 6 }}>🌱</Text>
+          <Text style={[styles.emptyDailyStudyTitle, { color: colors.text }]}>
+            Nenhum ciclo registrado hoje
+          </Text>
+          <Text style={[styles.emptyDailyStudySubtitle, { color: colors.textSecondary }]}>
+            Inicie um bloco de foco Pomodoro ou o cronômetro livre para acumular horas de dedicação e manter seu streak ativo.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 10 }}>Distribuição por matéria:</Text>
+          {subjects.map(sub => {
+            const total = getSubjectTotalTime(sub.id);
+            if (total === 0) return null;
+            return (
+              <View key={sub.id} style={[styles.statRow, { borderBottomColor: colors.borderSubtle }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: sub.color || colors.primary, marginRight: 8 }} />
+                  <Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{sub.name}</Text>
+                </View>
+                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 14 }}>{formatTotalTime(total)}</Text>
+              </View>
+            );
+          })}
+        </>
+      )}
+    </View>
+  );
+
+  const renderStopwatchVisualizerAndControls = () => (
+    <View style={styles.timerContainer}>
+      <View style={{ alignItems: 'center', marginVertical: 20 }}>
+        <Text style={[styles.timerText, { color: colors.text, fontSize: 52 }]}>{formatStopwatch(stopwatchSeconds)}</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>
+          {isStopwatchRunning ? '⚡ Cronômetro ativo' : 'Pronto para iniciar'}
+        </Text>
+      </View>
+
+      <View style={styles.timerControls}>
+        <TouchableOpacity
+          style={[
+            styles.timerButton,
+            { backgroundColor: isStopwatchRunning ? colors.danger : colors.primary }
+          ]}
+          onPress={toggleStopwatch}
+          activeOpacity={0.8}
+        >
+          <Text style={[
+            styles.timerButtonText,
+            { color: isStopwatchRunning ? getContrastTextColor(colors.danger) : getContrastTextColor(colors.primary) }
+          ]}>
+            {isStopwatchRunning ? '⏸️ Pausar' : '▶️ Iniciar'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.timerButton, { backgroundColor: colors.success }]}
+          onPress={saveAndResetStopwatch}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.timerButtonText, { color: getContrastTextColor(colors.success) }]}>💾 Salvar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.timerButton, { backgroundColor: colors.surfaceSubtle, borderWidth: 1, borderColor: colors.border }]}
+          onPress={resetStopwatch}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.timerButtonText, { color: colors.text }]}>🔄 Zerar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderAddTaskForm = () => (
+    <View style={[styles.addTaskContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <TextInput
+        ref={taskInputRef}
+        style={[styles.taskInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+        placeholder="Adicionar nova tarefa..."
+        placeholderTextColor={colors.textSecondary}
+        value={newTaskTitle}
+        onChangeText={setNewTaskTitle}
+        onSubmitEditing={handleAddTask}
+      />
+
+      {subjects.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, marginBottom: 10 }}>
+          <TouchableOpacity
+            style={[
+              styles.subjectChip,
+              {
+                backgroundColor: !taskSubjectId ? colors.primary : colors.surfaceSubtle,
+                borderWidth: 1,
+                borderColor: !taskSubjectId ? colors.primary : colors.border,
+                paddingVertical: 5
+              }
+            ]}
+            onPress={() => setTaskSubjectId(null)}
+            activeOpacity={0.7}
+          >
+            <Text style={{
+              color: !taskSubjectId ? getContrastTextColor(colors.primary) : colors.text,
+              fontSize: 12,
+              fontWeight: '700'
+            }}>
+              Geral
+            </Text>
+          </TouchableOpacity>
+          {subjects.map(sub => {
+            const isSelected = taskSubjectId === sub.id;
+            const chipBg = isSelected ? (sub.color || colors.primary) : colors.surfaceSubtle;
+            const textColor = isSelected ? getContrastTextColor(sub.color || colors.primary) : colors.text;
+
+            return (
+              <TouchableOpacity
+                key={sub.id}
+                style={[
+                  styles.subjectChip,
+                  {
+                    backgroundColor: chipBg,
+                    borderWidth: 1,
+                    borderColor: isSelected ? (sub.color || colors.primary) : colors.border,
+                    paddingVertical: 5
+                  }
+                ]}
+                onPress={() => setTaskSubjectId(sub.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: textColor, fontSize: 12, fontWeight: '700' }}>
+                  {sub.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600' }}>Prioridade:</Text>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {[
+            { id: 'low', label: '🟢 Baixa' },
+            { id: 'medium', label: '🟡 Média' },
+            { id: 'high', label: '🔴 Alta' }
+          ].map(p => {
+            const isSelected = taskPriority === p.id;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[
+                  styles.priorityBtn,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.surfaceSubtle,
+                    borderWidth: 1,
+                    borderColor: isSelected ? colors.primary : colors.border
+                  }
+                ]}
+                onPress={() => setTaskPriority(p.id as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={{
+                  fontSize: 11,
+                  color: isSelected ? getContrastTextColor(colors.primary) : colors.text,
+                  fontWeight: '700'
+                }}>
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.addButton, { backgroundColor: colors.primary }]}
+        onPress={handleAddTask}
+        activeOpacity={0.8}
+      >
+        <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '700', fontSize: 14 }}>
+          + Adicionar Tarefa
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderTaskFiltersAndList = () => (
+    <>
+      {subjects.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              {
+                backgroundColor: !selectedFilterSubject ? colors.primary : colors.surface,
+                borderColor: !selectedFilterSubject ? colors.primary : colors.border
+              }
+            ]}
+            onPress={() => setSelectedFilterSubject(null)}
+            activeOpacity={0.7}
+          >
+            <Text style={{
+              color: !selectedFilterSubject ? getContrastTextColor(colors.primary) : colors.text,
+              fontSize: 12,
+              fontWeight: '700'
+            }}>
+              Todas ({tasks.length})
+            </Text>
+          </TouchableOpacity>
+          {subjects.map(s => {
+            const count = tasks.filter(t => t.subjectId === s.id).length;
+            const isSelected = selectedFilterSubject === s.id;
+            return (
+              <TouchableOpacity
+                key={s.id}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.surface,
+                    borderColor: isSelected ? colors.primary : colors.border
+                  }
+                ]}
+                onPress={() => setSelectedFilterSubject(s.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={{
+                  color: isSelected ? getContrastTextColor(colors.primary) : colors.text,
+                  fontSize: 12,
+                  fontWeight: '700'
+                }}>
+                  {s.name} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        {filteredTasks.length === 0 ? (
+          <View style={[styles.emptyTasksCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.emptyTasksIconCircle, { backgroundColor: colors.surfaceSubtle }]}>
+              <Text style={{ fontSize: 28 }}>📝</Text>
+            </View>
+            <Text style={[styles.emptyTasksTitle, { color: colors.text }]}>
+              {selectedFilterSubject ? 'Nenhuma tarefa para esta matéria' : 'Nenhuma meta de estudo criada'}
+            </Text>
+            <Text style={[styles.emptyTasksSubtitle, { color: colors.textSecondary }]}>
+              {selectedFilterSubject
+                ? 'Não há tarefas cadastradas para o filtro selecionado.'
+                : 'Crie tarefas pontuais de leitura, exercícios ou projetos para organizar sua rotina de estudos.'}
+            </Text>
+            {!selectedFilterSubject && (
+              <TouchableOpacity
+                style={[styles.emptyTasksBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  taskInputRef.current?.focus();
+                }}
+                activeOpacity={0.8}
+                accessible={true}
+                accessibilityRole="button"
+                accessibilityLabel="Criar nova tarefa de estudo"
+                accessibilityHint="Coloca o cursor no campo de adicionar tarefa"
+              >
+                <Text style={[styles.emptyTasksBtnText, { color: getContrastTextColor(colors.primary) }]}>
+                  + Criar Nova Tarefa
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          filteredTasks.sort((a: StudyTask, b: StudyTask) => Number(a.isCompleted) - Number(b.isCompleted)).map((task: StudyTask) => {
+            const sub = subjects.find(s => s.id === task.subjectId);
+            return (
+              <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <TouchableOpacity
+                  onPress={() => toggleTask(task.id)}
+                  style={[
+                    styles.checkbox,
+                    {
+                      borderColor: task.isCompleted ? colors.primary : colors.border,
+                      backgroundColor: task.isCompleted ? colors.primary : 'transparent'
+                    }
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  {task.isCompleted && <Text style={{ color: getContrastTextColor(colors.primary), fontSize: 13, fontWeight: '800' }}>✓</Text>}
+                </TouchableOpacity>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={{
+                    color: task.isCompleted ? colors.textSecondary : colors.text,
+                    textDecorationLine: task.isCompleted ? 'line-through' : 'none',
+                    fontSize: 15,
+                    fontWeight: '600'
+                  }}>
+                    {task.title}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    {sub && (
+                      <Text style={{ color: sub.color || colors.primary, fontSize: 11, fontWeight: '700' }}>
+                        {sub.name}
+                      </Text>
+                    )}
+                    {task.priority === 'high' && (
+                      <Text style={{ fontSize: 10, color: colors.danger, fontWeight: '700' }}>• Urgente</Text>
+                    )}
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => deleteTask(task.id)} style={{ padding: 6 }} activeOpacity={0.7}>
+                  <Text style={{ color: colors.danger, fontSize: 18 }}>×</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    </>
+  );
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow, isDesktop && styles.desktopHeaderWidth]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={styles.headerTitle}>Estudos</Text>
           {gamification && (
@@ -866,6 +1367,7 @@ export const StudyScreen: React.FC<Props> = ({
       {toastMessage && (
         <View style={[
           styles.toastBanner,
+          isDesktop && styles.desktopHeaderWidth,
           {
             backgroundColor: toastMessage.type === 'success' 
               ? colors.success 
@@ -888,7 +1390,7 @@ export const StudyScreen: React.FC<Props> = ({
       )}
 
       {/* Apple HIG Segmented Control tabs */}
-      <View style={[styles.segmentedControlWrap, { backgroundColor: colors.surfaceSubtle }]}>
+      <View style={[styles.segmentedControlWrap, { backgroundColor: colors.surfaceSubtle }, isDesktop && styles.desktopSegmentWidth]}>
         {[
           { id: 'pomodoro', label: '🍅 Pomodoro' },
           { id: 'cronometro', label: '⏱️ Cronômetro' },
@@ -920,607 +1422,95 @@ export const StudyScreen: React.FC<Props> = ({
       </View>
 
       {activeTab === 'pomodoro' ? (
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Matéria em Foco</Text>
-            
-            {subjects.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                {subjects.map(sub => {
-                  const isSelected = selectedSubjectId === sub.id;
-                  const chipBg = isSelected ? (sub.color || colors.primary) : colors.surfaceSubtle;
-                  const textColor = isSelected ? getContrastTextColor(sub.color || colors.primary) : colors.text;
-
-                  return (
-                    <TouchableOpacity
-                      key={sub.id}
-                      style={[
-                        styles.subjectChip,
-                        {
-                          backgroundColor: chipBg,
-                          borderWidth: StyleSheet.hairlineWidth,
-                          borderColor: isSelected ? (sub.color || colors.primary) : colors.border
-                        }
-                      ]}
-                      onPress={() => {
-                        Haptics.selectionAsync();
-                        setSelectedSubjectId(sub.id);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={{ color: textColor, fontWeight: '700', fontSize: 13 }}>
-                        {sub.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <View style={[styles.noSubjectsCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.borderSubtle }]}>
-                <Text style={{ fontSize: 22, marginBottom: 4 }}>📚</Text>
-                <Text style={[styles.noSubjectsTitle, { color: colors.text }]}>
-                  Nenhuma disciplina cadastrada
-                </Text>
-                <Text style={[styles.noSubjectsText, { color: colors.textSecondary }]}>
-                  Cadastre suas matérias para vincular horas de foco Pomodoro e manter seu histórico.
-                </Text>
-                {onAddNewSubject && (
-                  <TouchableOpacity
-                    style={[styles.addSubjectCtaBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      onAddNewSubject();
-                    }}
-                    activeOpacity={0.8}
-                    accessible={true}
-                    accessibilityRole="button"
-                    accessibilityLabel="Cadastrar Nova Matéria"
-                    accessibilityHint="Abre o modal para incluir disciplina"
-                  >
-                    <Text style={[styles.addSubjectCtaBtnText, { color: getContrastTextColor(colors.primary) }]}>
-                      + Cadastrar Matéria
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            {/* Quick Presets */}
-            <View style={styles.presetsContainer}>
-              <Text style={[styles.presetsLabel, { color: colors.textSecondary }]}>⏱️ Duração rápida:</Text>
-              <View style={styles.presetsRow}>
-                {[15, 25, 45, 50, 60].map((presetMin) => {
-                  const isPresetSelected = !isBreak && activeFocusMinutes === presetMin;
-                  return (
-                    <TouchableOpacity
-                      key={presetMin}
-                      style={[
-                        styles.presetChip,
-                        {
-                          backgroundColor: isPresetSelected ? colors.primary : colors.surfaceSubtle,
-                          borderColor: isPresetSelected ? colors.primary : colors.border,
-                        }
-                      ]}
-                      onPress={() => handleSelectPreset(presetMin)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={{
-                        color: isPresetSelected ? getContrastTextColor(colors.primary) : colors.text,
-                        fontWeight: '700',
-                        fontSize: 12
-                      }}>
-                        {presetMin}m
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View style={styles.timerContainer}>
-              {/* Apple Activity Rings Visualizer */}
-              <View style={styles.activityRingsWrap}>
-                <View style={[styles.ringOuter, { borderColor: colors.primaryLight }]}>
-                  <View style={[
-                    styles.ringOuter,
-                    {
-                      borderColor: isBreak ? colors.success : colors.primary,
-                      borderLeftColor: 'transparent',
-                      borderBottomColor: 'transparent',
-                      transform: [{ rotate: `${Math.min(360, Math.round((( (activeFocusMinutes * 60) - timeLeft ) / Math.max(1, (activeFocusMinutes * 60)) ) * 360))}deg` }]
-                    }
-                  ]} />
-                </View>
-                <View style={[styles.ringInner, { borderColor: (colors.info ? `${colors.info}25` : 'rgba(59, 130, 246, 0.2)') }]}>
-                  <View style={[
-                    styles.ringInner,
-                    {
-                      borderColor: colors.info || '#3B82F6',
-                      borderTopColor: 'transparent',
-                      borderRightColor: 'transparent'
-                    }
-                  ]} />
-                </View>
-
-                {/* Center Content */}
-                <View style={styles.ringCenter}>
-                  <View style={[
-                    styles.statePill,
-                    {
-                      backgroundColor: isBreak ? colors.successLight : colors.primaryLight,
-                      borderColor: isBreak ? colors.success : colors.primary
-                    }
-                  ]}>
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: isBreak ? colors.success : colors.primary }}>
-                      {isBreak ? `☕ Descanso` : `🎯 Foco Total`}
-                    </Text>
-                  </View>
-                  <Text style={[styles.timerText, { color: colors.text }]}>{formatTime(timeLeft)}</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
-                    {activeFocusMinutes} min
-                  </Text>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={[styles.scrollContentInner, isDesktop && styles.desktopContentWidth]}
+          showsVerticalScrollIndicator={false}
+        >
+          {isDesktop ? (
+            <View style={styles.desktopColumnsContainer}>
+              <View style={styles.desktopLeftColumn}>
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>Temporizador Pomodoro</Text>
+                  {renderPomodoroTimerVisualizer()}
                 </View>
               </View>
-              
-              <View style={styles.timerControls}>
-                <TouchableOpacity
-                  style={[styles.timerButton, { backgroundColor: colors.primary }]}
-                  onPress={toggleTimer}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.timerButtonText, { color: getContrastTextColor(colors.primary) }]}>
-                    {isActive ? '⏸️ Pausar' : '▶️ Iniciar Foco'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.timerButton, { backgroundColor: colors.surfaceSubtle, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
-                  onPress={resetTimer}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.timerButtonText, { color: colors.text }]}>🔄 Resetar</Text>
-                </TouchableOpacity>
+
+              <View style={styles.desktopRightColumn}>
+                {renderSubjectSelector(selectedSubjectId, setSelectedSubjectId, 'Matéria em Foco')}
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  {renderPomodoroPresets()}
+                </View>
+                {renderDailyOverview()}
               </View>
             </View>
-          </View>
-
-          {/* Daily study overview card */}
-          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 0 }]}>Tempo Hoje</Text>
-              <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 18 }}>
-                {formatTotalTime(todayTotalStudyMs)}
-              </Text>
-            </View>
-
-            {todayTotalStudyMs === 0 ? (
-              <View style={[styles.emptyDailyStudyCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.borderSubtle }]}>
-                <Text style={{ fontSize: 22, marginBottom: 6 }}>🌱</Text>
-                <Text style={[styles.emptyDailyStudyTitle, { color: colors.text }]}>
-                  Nenhum ciclo registrado hoje
-                </Text>
-                <Text style={[styles.emptyDailyStudySubtitle, { color: colors.textSecondary }]}>
-                  Inicie um bloco de foco Pomodoro ou o cronômetro livre para acumular horas de dedicação e manter seu streak ativo.
-                </Text>
+          ) : (
+            <>
+              {renderSubjectSelector(selectedSubjectId, setSelectedSubjectId, 'Matéria em Foco')}
+              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                {renderPomodoroPresets()}
+                {renderPomodoroTimerVisualizer()}
               </View>
-            ) : (
-              <>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 10 }}>Distribuição por matéria:</Text>
-                {subjects.map(sub => {
-                  const total = getSubjectTotalTime(sub.id);
-                  if (total === 0) return null;
-                  return (
-                    <View key={sub.id} style={[styles.statRow, { borderBottomColor: colors.borderSubtle }]}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: sub.color || colors.primary, marginRight: 8 }} />
-                        <Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{sub.name}</Text>
-                      </View>
-                      <Text style={{ color: colors.text, fontWeight: '700', fontSize: 14 }}>{formatTotalTime(total)}</Text>
-                    </View>
-                  );
-                })}
-              </>
-            )}
-          </View>
+              {renderDailyOverview()}
+            </>
+          )}
           <View style={{ height: 100 }} />
         </ScrollView>
       ) : activeTab === 'cronometro' ? (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Cronômetro Livre</Text>
-            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 15 }}>
-              Contagem progressiva: estude no seu próprio ritmo e salve a sessão ao terminar.
-            </Text>
-
-            {subjects.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
-                {subjects.map(sub => {
-                  const isSelected = stopwatchSubjectId === sub.id;
-                  const chipBg = isSelected ? (sub.color || colors.primary) : colors.surfaceSubtle;
-                  const textColor = isSelected ? getContrastTextColor(sub.color || colors.primary) : colors.text;
-
-                  return (
-                    <TouchableOpacity
-                      key={sub.id}
-                      style={[
-                        styles.subjectChip,
-                        {
-                          backgroundColor: chipBg,
-                          borderWidth: 1,
-                          borderColor: isSelected ? (sub.color || colors.primary) : colors.border
-                        }
-                      ]}
-                      onPress={() => {
-                        Haptics.selectionAsync();
-                        setStopwatchSubjectId(sub.id);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={{ color: textColor, fontWeight: '700', fontSize: 13 }}>
-                        {sub.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <View style={[styles.noSubjectsCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.borderSubtle }]}>
-                <Text style={{ fontSize: 22, marginBottom: 4 }}>📚</Text>
-                <Text style={[styles.noSubjectsTitle, { color: colors.text }]}>
-                  Nenhuma disciplina cadastrada
-                </Text>
-                <Text style={[styles.noSubjectsText, { color: colors.textSecondary }]}>
-                  Cadastre suas matérias para acompanhar o cronômetro livre por disciplina.
-                </Text>
-                {onAddNewSubject && (
-                  <TouchableOpacity
-                    style={[styles.addSubjectCtaBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      onAddNewSubject();
-                    }}
-                    activeOpacity={0.8}
-                    accessible={true}
-                    accessibilityRole="button"
-                    accessibilityLabel="Cadastrar Nova Matéria"
-                    accessibilityHint="Abre o formulário para cadastrar uma matéria"
-                  >
-                    <Text style={[styles.addSubjectCtaBtnText, { color: getContrastTextColor(colors.primary) }]}>
-                      + Cadastrar Matéria
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            <View style={styles.timerContainer}>
-              <Text style={[styles.timerText, { color: colors.text }]}>{formatStopwatch(stopwatchSeconds)}</Text>
-              
-              <View style={styles.timerControls}>
-                <TouchableOpacity
-                  style={[
-                    styles.timerButton,
-                    { backgroundColor: isStopwatchRunning ? colors.danger : colors.primary }
-                  ]}
-                  onPress={toggleStopwatch}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[
-                    styles.timerButtonText,
-                    { color: isStopwatchRunning ? getContrastTextColor(colors.danger) : getContrastTextColor(colors.primary) }
-                  ]}>
-                    {isStopwatchRunning ? '⏸️ Pausar' : '▶️ Iniciar'}
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={[styles.scrollContentInner, isDesktop && styles.desktopContentWidth]}
+          showsVerticalScrollIndicator={false}
+        >
+          {isDesktop ? (
+            <View style={styles.desktopColumnsContainer}>
+              <View style={styles.desktopLeftColumn}>
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>Cronômetro Livre</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 15 }}>
+                    Contagem progressiva: estude no seu próprio ritmo e salve a sessão ao terminar.
                   </Text>
-                </TouchableOpacity>
+                  {renderStopwatchVisualizerAndControls()}
+                </View>
+              </View>
 
-                <TouchableOpacity
-                  style={[styles.timerButton, { backgroundColor: colors.success }]}
-                  onPress={saveAndResetStopwatch}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.timerButtonText, { color: getContrastTextColor(colors.success) }]}>💾 Salvar</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.timerButton, { backgroundColor: colors.surfaceSubtle, borderWidth: 1, borderColor: colors.border }]}
-                  onPress={resetStopwatch}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.timerButtonText, { color: colors.text }]}>🔄 Zerar</Text>
-                </TouchableOpacity>
+              <View style={styles.desktopRightColumn}>
+                {renderSubjectSelector(stopwatchSubjectId, setStopwatchSubjectId, 'Disciplina da Sessão')}
+                {renderDailyOverview()}
               </View>
             </View>
-          </View>
-
-          {/* Daily study overview card */}
-          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={[styles.cardTitle, { color: colors.text, marginBottom: 0 }]}>Tempo Hoje</Text>
-              <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 18 }}>
-                {formatTotalTime(todayTotalStudyMs)}
-              </Text>
-            </View>
-
-            {todayTotalStudyMs === 0 ? (
-              <View style={[styles.emptyDailyStudyCard, { backgroundColor: colors.surfaceSubtle, borderColor: colors.borderSubtle }]}>
-                <Text style={{ fontSize: 22, marginBottom: 6 }}>🌱</Text>
-                <Text style={[styles.emptyDailyStudyTitle, { color: colors.text }]}>
-                  Nenhum ciclo registrado hoje
+          ) : (
+            <>
+              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Cronômetro Livre</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 15 }}>
+                  Contagem progressiva: estude no seu próprio ritmo e salve a sessão ao terminar.
                 </Text>
-                <Text style={[styles.emptyDailyStudySubtitle, { color: colors.textSecondary }]}>
-                  Inicie um bloco de foco Pomodoro ou o cronômetro livre para acumular horas de dedicação e manter seu streak ativo.
-                </Text>
+                {renderSubjectSelector(stopwatchSubjectId, setStopwatchSubjectId, 'Disciplina da Sessão')}
+                {renderStopwatchVisualizerAndControls()}
               </View>
-            ) : (
-              <>
-                <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600', marginBottom: 10 }}>Distribuição por matéria:</Text>
-                {subjects.map(sub => {
-                  const total = getSubjectTotalTime(sub.id);
-                  if (total === 0) return null;
-                  return (
-                    <View key={sub.id} style={[styles.statRow, { borderBottomColor: colors.borderSubtle }]}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: sub.color || colors.primary, marginRight: 8 }} />
-                        <Text style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>{sub.name}</Text>
-                      </View>
-                      <Text style={{ color: colors.text, fontWeight: '700', fontSize: 14 }}>{formatTotalTime(total)}</Text>
-                    </View>
-                  );
-                })}
-              </>
-            )}
-          </View>
-
+              {renderDailyOverview()}
+            </>
+          )}
           <View style={{ height: 100 }} />
         </ScrollView>
       ) : (
-        <View style={[styles.content, { flex: 1 }]}>
-          {/* Add Task Box */}
-          <View style={[styles.addTaskContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <TextInput
-              ref={taskInputRef}
-              style={[styles.taskInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="Adicionar nova tarefa..."
-              placeholderTextColor={colors.textSecondary}
-              value={newTaskTitle}
-              onChangeText={setNewTaskTitle}
-              onSubmitEditing={handleAddTask}
-            />
-
-            {/* Subject selector for task */}
-            {subjects.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, marginBottom: 10 }}>
-                <TouchableOpacity
-                  style={[
-                    styles.subjectChip,
-                    {
-                      backgroundColor: !taskSubjectId ? colors.primary : colors.surfaceSubtle,
-                      borderWidth: 1,
-                      borderColor: !taskSubjectId ? colors.primary : colors.border,
-                      paddingVertical: 5
-                    }
-                  ]}
-                  onPress={() => setTaskSubjectId(null)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={{
-                    color: !taskSubjectId ? getContrastTextColor(colors.primary) : colors.text,
-                    fontSize: 12,
-                    fontWeight: '700'
-                  }}>
-                    Geral
-                  </Text>
-                </TouchableOpacity>
-                {subjects.map(sub => {
-                  const isSelected = taskSubjectId === sub.id;
-                  const chipBg = isSelected ? (sub.color || colors.primary) : colors.surfaceSubtle;
-                  const textColor = isSelected ? getContrastTextColor(sub.color || colors.primary) : colors.text;
-
-                  return (
-                    <TouchableOpacity
-                      key={sub.id}
-                      style={[
-                        styles.subjectChip,
-                        {
-                          backgroundColor: chipBg,
-                          borderWidth: 1,
-                          borderColor: isSelected ? (sub.color || colors.primary) : colors.border,
-                          paddingVertical: 5
-                        }
-                      ]}
-                      onPress={() => setTaskSubjectId(sub.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={{ color: textColor, fontSize: 12, fontWeight: '700' }}>
-                        {sub.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            {/* Priority selector */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '600' }}>Prioridade:</Text>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {[
-                  { id: 'low', label: '🟢 Baixa' },
-                  { id: 'medium', label: '🟡 Média' },
-                  { id: 'high', label: '🔴 Alta' }
-                ].map(p => {
-                  const isSelected = taskPriority === p.id;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={[
-                        styles.priorityBtn,
-                        {
-                          backgroundColor: isSelected ? colors.primary : colors.surfaceSubtle,
-                          borderWidth: 1,
-                          borderColor: isSelected ? colors.primary : colors.border
-                        }
-                      ]}
-                      onPress={() => setTaskPriority(p.id as any)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={{
-                        fontSize: 11,
-                        color: isSelected ? getContrastTextColor(colors.primary) : colors.text,
-                        fontWeight: '700'
-                      }}>
-                        {p.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+        <View style={[styles.content, { flex: 1 }, isDesktop && styles.desktopContentWidth]}>
+          {isDesktop ? (
+            <View style={[styles.desktopColumnsContainer, { flex: 1 }]}>
+              <View style={styles.desktopLeftColumn}>
+                {renderAddTaskForm()}
+              </View>
+              <View style={[styles.desktopRightColumn, { flex: 1.5 }]}>
+                {renderTaskFiltersAndList()}
               </View>
             </View>
-
-            <TouchableOpacity
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={handleAddTask}
-              activeOpacity={0.8}
-            >
-              <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '700', fontSize: 14 }}>
-                + Adicionar Tarefa
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Filter tasks by subject */}
-          {subjects.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-              <TouchableOpacity
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor: !selectedFilterSubject ? colors.primary : colors.surface,
-                    borderColor: !selectedFilterSubject ? colors.primary : colors.border
-                  }
-                ]}
-                onPress={() => setSelectedFilterSubject(null)}
-                activeOpacity={0.7}
-              >
-                <Text style={{
-                  color: !selectedFilterSubject ? getContrastTextColor(colors.primary) : colors.text,
-                  fontSize: 12,
-                  fontWeight: '700'
-                }}>
-                  Todas ({tasks.length})
-                </Text>
-              </TouchableOpacity>
-              {subjects.map(s => {
-                const count = tasks.filter(t => t.subjectId === s.id).length;
-                const isSelected = selectedFilterSubject === s.id;
-                return (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={[
-                      styles.filterChip,
-                      {
-                        backgroundColor: isSelected ? colors.primary : colors.surface,
-                        borderColor: isSelected ? colors.primary : colors.border
-                      }
-                    ]}
-                    onPress={() => setSelectedFilterSubject(s.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={{
-                      color: isSelected ? getContrastTextColor(colors.primary) : colors.text,
-                      fontSize: 12,
-                      fontWeight: '700'
-                    }}>
-                      {s.name} ({count})
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+          ) : (
+            <>
+              {renderAddTaskForm()}
+              {renderTaskFiltersAndList()}
+            </>
           )}
-
-          {/* Task list */}
-          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-            {filteredTasks.length === 0 ? (
-              <View style={[styles.emptyTasksCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View style={[styles.emptyTasksIconCircle, { backgroundColor: colors.surfaceSubtle }]}>
-                  <Text style={{ fontSize: 28 }}>📝</Text>
-                </View>
-                <Text style={[styles.emptyTasksTitle, { color: colors.text }]}>
-                  {selectedFilterSubject ? 'Nenhuma tarefa para esta matéria' : 'Nenhuma meta de estudo criada'}
-                </Text>
-                <Text style={[styles.emptyTasksSubtitle, { color: colors.textSecondary }]}>
-                  {selectedFilterSubject
-                    ? 'Não há tarefas cadastradas para o filtro selecionado.'
-                    : 'Crie tarefas pontuais de leitura, exercícios ou projetos para organizar sua rotina de estudos.'}
-                </Text>
-                {!selectedFilterSubject && (
-                  <TouchableOpacity
-                    style={[styles.emptyTasksBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      taskInputRef.current?.focus();
-                    }}
-                    activeOpacity={0.8}
-                    accessible={true}
-                    accessibilityRole="button"
-                    accessibilityLabel="Criar nova tarefa de estudo"
-                    accessibilityHint="Coloca o cursor no campo de adicionar tarefa"
-                  >
-                    <Text style={[styles.emptyTasksBtnText, { color: getContrastTextColor(colors.primary) }]}>
-                      + Criar Nova Tarefa
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : (
-              filteredTasks.sort((a: StudyTask, b: StudyTask) => Number(a.isCompleted) - Number(b.isCompleted)).map((task: StudyTask) => {
-                const sub = subjects.find(s => s.id === task.subjectId);
-                return (
-                  <View key={task.id} style={[styles.taskRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <TouchableOpacity
-                      onPress={() => toggleTask(task.id)}
-                      style={[
-                        styles.checkbox,
-                        {
-                          borderColor: task.isCompleted ? colors.primary : colors.border,
-                          backgroundColor: task.isCompleted ? colors.primary : 'transparent'
-                        }
-                      ]}
-                      activeOpacity={0.7}
-                    >
-                      {task.isCompleted && (
-                        <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 13 }}>✓</Text>
-                      )}
-                    </TouchableOpacity>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{
-                        color: task.isCompleted ? colors.textSecondary : colors.text,
-                        textDecorationLine: task.isCompleted ? 'line-through' : 'none',
-                        fontSize: 15,
-                        fontWeight: '600'
-                      }}>
-                        {task.title}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        {sub && (
-                          <Text style={{ color: sub.color || colors.primary, fontSize: 11, fontWeight: '700' }}>
-                            {sub.name}
-                          </Text>
-                        )}
-                        {task.priority === 'high' && (
-                          <Text style={{ fontSize: 10, color: colors.danger, fontWeight: '700' }}>• Urgente</Text>
-                        )}
-                      </View>
-                    </View>
-                    <TouchableOpacity onPress={() => deleteTask(task.id)} style={{ padding: 6 }} activeOpacity={0.7}>
-                      <Text style={{ color: colors.danger, fontSize: 18 }}>×</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })
-            )}
-            <View style={{ height: 100 }} />
-          </ScrollView>
         </View>
       )}
     </KeyboardAvoidingView>
@@ -1758,6 +1748,38 @@ const getStyles = (colors: any) => StyleSheet.create({
   addSubjectCtaBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  desktopColumnsContainer: {
+    flexDirection: 'row',
+    gap: 20,
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  desktopLeftColumn: {
+    flex: 1,
+    minWidth: 360,
+  },
+  desktopRightColumn: {
+    flex: 1.2,
+    minWidth: 380,
+  },
+  desktopHeaderWidth: {
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  desktopSegmentWidth: {
+    maxWidth: 1168,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  desktopContentWidth: {
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  scrollContentInner: {
+    paddingBottom: 40,
   },
 });
 

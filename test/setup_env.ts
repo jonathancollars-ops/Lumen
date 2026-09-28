@@ -166,7 +166,89 @@ export const mockNotifications = {
 
 (mockAsyncStorage as any).default = mockAsyncStorage;
 
+// Web Mock Storage (localStorage & sessionStorage)
+export class MockStorage {
+  private store: Record<string, string> = {};
+  get length(): number {
+    return Object.keys(this.store).length;
+  }
+  key(index: number): string | null {
+    return Object.keys(this.store)[index] || null;
+  }
+  getItem(key: string): string | null {
+    return this.store[key] ?? null;
+  }
+  setItem(key: string, value: string): void {
+    this.store[key] = String(value);
+  }
+  removeItem(key: string): void {
+    delete this.store[key];
+  }
+  clear(): void {
+    this.store = {};
+  }
+}
+
+export const mockLocalStorage = new MockStorage();
+export const mockSessionStorage = new MockStorage();
+
+if (typeof (globalThis as any).window === 'undefined') {
+  (globalThis as any).window = globalThis;
+}
+(globalThis as any).localStorage = mockLocalStorage;
+(globalThis as any).sessionStorage = mockSessionStorage;
+(globalThis as any).window.localStorage = mockLocalStorage;
+(globalThis as any).window.sessionStorage = mockSessionStorage;
+
+// Mock expo-auth-session
+export let mockAuthRequestPromptResult: any = {
+  type: 'success',
+  params: { access_token: 'mock_access_token_from_auth_session', expires_in: '3600' },
+  authentication: { accessToken: 'mock_access_token_from_auth_session', expiresIn: 3600 },
+};
+export function setMockAuthRequestPromptResult(result: any) {
+  mockAuthRequestPromptResult = result;
+}
+
+export const mockAuthSession = {
+  makeRedirectUri: (options?: any) => (options?.scheme ? `${options.scheme}://oauthredirect` : 'http://localhost:8081'),
+  startAsync: async (options: any) => ({
+    type: 'success',
+    params: { access_token: 'mock_access_token_123', expires_in: '3600' },
+  }),
+  dismiss: () => {},
+  getDefaultReturnUrl: () => 'http://localhost:8081',
+  ResponseType: { Token: 'token', Code: 'code' },
+  Prompt: { Consent: 'consent', SelectAccount: 'select_account' },
+  AuthRequest: class {
+    config: any;
+    codeVerifier?: string;
+    constructor(config: any) {
+      this.config = config;
+      (globalThis as any).__lastAuthRequestConfig = config;
+    }
+    promptAsync = async (discovery?: any) => {
+      (globalThis as any).__lastAuthRequestDiscovery = discovery;
+      return mockAuthRequestPromptResult;
+    };
+  },
+};
+
+export const mockCrypto = {
+  randomUUID: () => 'mock-uuid-1234',
+  digestStringAsync: async () => 'mock-digest',
+  getRandomBytes: (byteCount: number) => new Uint8Array(byteCount),
+  getRandomBytesAsync: async (byteCount: number) => new Uint8Array(byteCount),
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+};
+
 Module.prototype.require = function (id: string) {
+  if (id === 'expo-crypto') {
+    return mockCrypto;
+  }
+  if (id === 'expo-auth-session' || id.startsWith('expo-auth-session/')) {
+    return mockAuthSession;
+  }
   if (id === '@react-native-community/slider') return 'Slider';
   if (id === 'expo-linking') {
     return mockExpoLinking;

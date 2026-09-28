@@ -6,8 +6,10 @@ import {
   Animated,
   StyleProp,
   ViewStyle,
+  Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useResponsive } from '../hooks/useResponsive';
 
 /**
  * Sequência canônica das 5 abas principais do Project Lumen
@@ -88,7 +90,7 @@ export const SwipeableTabContainer: React.FC<SwipeableTabContainerProps> = ({
   // Mantém refs atualizadas para os manipuladores do PanResponder
   const stateRef = useRef({
     currentIndex,
-    disabled: Boolean(disabled || internalDisabled),
+    disabled: Boolean(disabled || internalDisabled || Platform.OS === 'web'),
     onNavigateTab,
     threshold,
   });
@@ -96,7 +98,7 @@ export const SwipeableTabContainer: React.FC<SwipeableTabContainerProps> = ({
   useEffect(() => {
     stateRef.current = {
       currentIndex,
-      disabled: Boolean(disabled || internalDisabled),
+      disabled: Boolean(disabled || internalDisabled || Platform.OS === 'web'),
       onNavigateTab,
       threshold,
     };
@@ -214,14 +216,17 @@ export const SwipeableTabContainer: React.FC<SwipeableTabContainerProps> = ({
     () => ({
       setSwipeDisabled: setInternalDisabled,
     }),
-    []
+    [],
   );
+
+  const { isDesktop } = useResponsive();
 
   return (
     <SwipeableTabContext.Provider value={contextValue}>
       <Animated.View
         style={[
           styles.container,
+          isDesktop && { marginLeft: 260 },
           style,
           {
             transform: [{ translateX }],

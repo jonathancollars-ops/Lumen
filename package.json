@@ -1,6 +1,6 @@
 {
   "name": "lumen",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -21,12 +21,15 @@
     "expo-status-bar": "~3.0.9",
     "pdfjs-dist": "^3.11.174",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-calendars": "^1.1314.0",
     "react-native-safe-area-context": "~5.6.0",
-    "react-native-screens": "~4.16.0"
+    "react-native-screens": "~4.16.0",
+    "react-native-web": "^0.21.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.0",
     "@types/react": "~19.1.10",
     "tsx": "^4.23.12",
     "typescript": "~5.9.2"
@@ -36,7 +39,11 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "node --import tsx test/run_all.ts"
+    "build:web": "expo export -p web",
+    "test": "node --import tsx test/run_all.ts",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "private": true
 }

@@ -236,24 +236,24 @@ async function runAllChallengerProbes() {
     (globalThis as any).fetch = async () => ({
       ok: true,
       json: async () => ({
-        tag_name: 'v3.6.1',
-        name: 'Lumen v3.6.1 Release',
+        tag_name: 'v3.7.0',
+        name: 'Lumen v3.7.0 Release',
         body: 'Awesome new features',
-        html_url: 'https://github.com/jonathancollars-ops/organiza/releases/tag/v3.6.1',
+        html_url: 'https://github.com/jonathancollars-ops/organiza/releases/tag/v3.7.0',
         assets: [
           { name: 'source.zip', browser_download_url: 'https://example.com/source.zip' },
-          { name: 'lumen-v3.6.1.apk', browser_download_url: 'https://example.com/lumen.apk' }
+          { name: 'lumen-v3.7.0.apk', browser_download_url: 'https://example.com/lumen.apk' }
         ]
       })
     });
 
     const checkSuccess = await AppUpdateService.checkForUpdates(true);
-    assert(checkSuccess !== null && checkSuccess.hasUpdate === true, 'checkForUpdates detects newer v3.6.1 release');
-    assert(checkSuccess?.latestVersion === '3.6.1', 'latestVersion parsed correctly');
+    assert(checkSuccess !== null && checkSuccess.hasUpdate === true, 'checkForUpdates detects newer v3.7.0 release');
+    assert(checkSuccess?.latestVersion === '3.7.0', 'latestVersion parsed correctly');
     assert(checkSuccess?.downloadUrl === 'https://example.com/lumen.apk', 'APK asset URL extracted correctly');
 
     // 2.5 Ignored version logic
-    await AppUpdateService.ignoreVersion('3.6.1');
+    await AppUpdateService.ignoreVersion('3.7.0');
     const checkIgnored = await AppUpdateService.checkForUpdates(false);
     assert(checkIgnored === null, 'checkForUpdates returns null for ignored version on auto check');
 

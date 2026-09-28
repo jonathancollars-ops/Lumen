@@ -1,0 +1,144 @@
+name: Windows CI & Desktop Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: 'Run Test Suite Before Build'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    name: Verify, Test & Build Windows Desktop (EXE & MSI)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 🦀 Setup Rust Toolchain (Stable MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: ⚡ Rust & Cargo Dependency Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: 📦 Install NPM Dependencies
+        shell: bash
+        run: npm ci || npm install
+
+      - name: 🔍 Strict TypeScript Compilation Check
+        run: npx tsc --noEmit
+
+      - name: 🧪 Run Automated Test Harness
+        if: ${{ github.event.inputs.run_tests != 'false' }}
+        run: npm test
+
+      - name: 🌐 Build Web Frontend (Expo Export)
+        run: npm run build:web
+
+      - name: 🔨 Build Tauri Desktop Executable & Installers (.exe & .msi)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📋 Prepare Windows Artifacts & Calculate Checksums
+        id: prepare-artifact
+        shell: bash
+        run: |
+          mkdir -p build-windows-output
+          echo "🔍 Searching for generated Windows bundles (.exe / .msi)..."
+          
+          # Copy NSIS setup and WiX MSI installers from target release bundle
+          if [ -d "src-tauri/target/release/bundle" ]; then
+            find src-tauri/target/release/bundle -type f \( -name "*.exe" -o -name "*.msi" \) -exec cp -v {} build-windows-output/ \;
+          fi
+
+          # Also include standalone portable executable if generated
+          if [ -f "src-tauri/target/release/lumen.exe" ]; then
+            cp -v "src-tauri/target/release/lumen.exe" build-windows-output/lumen-v3.6.1-portable.exe
+          fi
+
+          # Verify that artifacts were collected
+          if [ -z "$(ls -A build-windows-output 2>/dev/null)" ]; then
+            echo "❌ Error: No Windows installers (.exe or .msi) found in src-tauri/target/release/bundle!"
+            ls -la src-tauri/target/release/ || true
+            exit 1
+          fi
+
+          echo "📦 Collected Windows artifacts:"
+          ls -lh build-windows-output/
+
+          # Calculate SHA-256 Checksums
+          cd build-windows-output
+          sha256sum * > SHA256SUMS.txt
+          echo ""
+          echo "🔐 SHA-256 Checksums:"
+          cat SHA256SUMS.txt
+          cd ..
+
+      - name: 📤 Upload Windows Artifacts (EXE & MSI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-v3.6.1-windows-setup
+          path: |
+            build-windows-output/*
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: 🏷️ Publish GitHub Release (On Main Branch)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v3.6.1-windows-build-${{ github.run_number }}
+          name: Lumen Desktop Windows v3.6.1 (Build #${{ github.run_number }})
+          files: |
+            build-windows-output/*
+          body_path: CHANGELOG.md
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📝 Output GitHub Actions Job Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### 🪟 Lumen 3.6.1 Windows Desktop CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status == 'success' && '✅ SUCCESS' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner**: \`windows-latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: \`lumen-v3.6.1-windows-setup\` (.exe installer, .msi package, portable .exe)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Typecheck**: \`npx tsc --noEmit\` (0 errors)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Web Build**: \`npm run build:web\` (Expo Metro Export)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tauri Action**: \`tauri-apps/tauri-action@v0\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f build-windows-output/SHA256SUMS.txt ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### 🔐 SHA-256 Checksums:" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            cat build-windows-output/SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi

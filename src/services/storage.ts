@@ -36,6 +36,7 @@ const AACC_KEY = '@organiza_aacc';
 const GROUP_PROJECTS_KEY = '@organiza_group_projects';
 const GAMIFICATION_KEY = '@organiza_gamification';
 const ACTIVE_TIMER_KEY = '@organiza_active_timer';
+const GOOGLE_CLIENT_ID_KEY = '@organiza_google_client_id';
 
 interface SecureStoreModule {
   setItemAsync: (key: string, value: string, options?: { keychainAccessible?: number }) => Promise<void>;
@@ -1351,6 +1352,32 @@ export const StorageService = {
     }
   },
 
+  async getGoogleClientId(): Promise<string> {
+    try {
+      const val = await AsyncStorage.getItem(GOOGLE_CLIENT_ID_KEY);
+      return val ? val.trim() : '';
+    } catch (e) {
+      console.warn('[StorageService] Error getting Google Client ID:', e);
+      return '';
+    }
+  },
+
+  async saveGoogleClientId(clientId: string): Promise<boolean> {
+    try {
+      const sanitized = clientId ? clientId.trim() : '';
+      if (sanitized) {
+        return await safeSetItem(GOOGLE_CLIENT_ID_KEY, sanitized);
+      } else {
+        await AsyncStorage.removeItem(GOOGLE_CLIENT_ID_KEY);
+        return true;
+      }
+    } catch (e) {
+      console.error('[StorageService] Failed to save Google Client ID to storage', e);
+      notifyStorageError({ key: GOOGLE_CLIENT_ID_KEY, error: e, isQuota: false });
+      return false;
+    }
+  },
+
   /**
    * Export all user application data into a single structured JSON object
    */
@@ -1513,6 +1540,7 @@ export const StorageService = {
       GAMIFICATION_KEY,
       AI_CONFIG_KEY,
       ACTIVE_TIMER_KEY,
+      GOOGLE_CLIENT_ID_KEY,
       '@organiza_local_ai_model_info',
     ]);
   }

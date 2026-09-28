@@ -11,6 +11,15 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.6.1] - 2026-09-28
+### 🖥️ Lumen Desktop para Windows (.exe) & Correção de OAuth Google
+- **Lumen para Windows:** Suporte oficial a desktop nativo via Tauri v2 (`src-tauri`), com janela dedicada de 1200x800, suporte a temas e instaladores `.exe` e `.msi`.
+- **Layout Responsivo:** Barra lateral (Sidebar) elegante em telas largas (monitores e notebooks > 1024px) e redimensionamento proporcional do cronômetro de estudo e agenda.
+- **Autenticação Real OAuth2 (Fim do erro 401):** Implementado fluxo real via `expo-auth-session` no mobile e OAuth Web/Desktop via popup/redirect, com campo para inserção opcional de Google Client ID personalizado nas configurações.
+- **CI/CD para Windows:** Novo workflow do GitHub Actions (`build-windows.yml`) que compila e empacota automaticamente o instalador `.exe` e `.msi` para Windows.
+
+---
+
 ## [3.6.0] - 2026-09-28
 ### ☁️ Sincronização em Nuvem (Google Drive - Fase 1)
 - **Google Drive Sync:** Integração com a Google Drive REST API v3 utilizando a pasta isolada `appDataFolder` do próprio usuário, sem custos e sem necessidade de banco de dados centralizado.

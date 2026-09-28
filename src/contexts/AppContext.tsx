@@ -298,7 +298,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     isCloudSyncingRef.current = true;
     try {
-      return await GoogleDriveSyncService.sincronizar();
+      const result = await GoogleDriveSyncService.sincronizar();
+      if (result.success && result.action === 'download') {
+        await loadData();
+      }
+      return result;
     } finally {
       isCloudSyncingRef.current = false;
     }
@@ -308,6 +312,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let isMounted = true;
 
     const initializeWithCloudCheck = async () => {
+      // 0. Verifica se há retorno de autenticação OAuth na URL (Web / Desktop Tauri)
+      try {
+        await GoogleDriveSyncService.checkUrlForOAuthCallback();
+      } catch (oauthErr) {
+        console.warn('[AppContext] Falha ao verificar callback OAuth na URL:', oauthErr);
+      }
+
       // 1. Carrega dados locais de forma assíncrona na montagem
       await loadData();
 

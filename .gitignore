@@ -49,6 +49,7 @@ coverage/
 # generated native folders
 /ios
 /android
+src-tauri/target/
 
 # Agents & Skills
 .agents/

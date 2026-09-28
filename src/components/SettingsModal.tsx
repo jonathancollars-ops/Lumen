@@ -82,6 +82,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [syncStatus, setSyncStatus] = useState<GoogleDriveSyncStatus | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState('');
 
   const fetchSyncStatus = React.useCallback(async () => {
     try {
@@ -121,6 +122,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setAiConfig(externalAIConfig);
       }
       loadAIData();
+      loadGoogleClientId();
     }
   }, [visible, settings, externalAIConfig]);
 
@@ -132,6 +134,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     } catch (e) {
       console.warn('Erro ao carregar dados de IA:', e);
+    }
+  };
+
+  const loadGoogleClientId = async () => {
+    try {
+      const id = await StorageService.getGoogleClientId();
+      if (typeof id === 'string') {
+        setGoogleClientId(id);
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar Google Client ID:', e);
     }
   };
 
@@ -298,9 +311,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (result.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await fetchSyncStatus();
+        if (result.action === 'download' && onRestoreSuccess) {
+          onRestoreSuccess();
+        }
         Alert.alert(
           'Sincronização Concluída!',
-          'Seus dados foram salvos com sucesso na nuvem segura do Google Drive.'
+          result.action === 'download'
+            ? 'Dados baixados com sucesso da nuvem do Google Drive.'
+            : 'Seus dados foram salvos com sucesso na nuvem segura do Google Drive.'
         );
       } else {
         Alert.alert('Aviso de Sincronização', result.message || 'Falha ao sincronizar.');
@@ -316,14 +334,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsConnectingCloud(true);
     try {
-      await GoogleDriveSyncService.connectWithGoogle();
-      await GoogleDriveSyncService.sincronizar();
-      await fetchSyncStatus();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        'Conta Conectada!',
-        'Sua conta do Google Drive foi conectada com sucesso e um backup inicial foi realizado.'
-      );
+      const trimmedClientId = googleClientId.trim();
+      if (trimmedClientId) {
+        await StorageService.saveGoogleClientId(trimmedClientId);
+      }
+      const connected = await GoogleDriveSyncService.iniciarLoginGoogle(trimmedClientId || undefined);
+      if (connected) {
+        const syncResult = await GoogleDriveSyncService.sincronizar();
+        if (syncResult.action === 'download' && onRestoreSuccess) {
+          onRestoreSuccess();
+        }
+        await fetchSyncStatus();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Conta Conectada!',
+          syncResult.action === 'download'
+            ? 'Sua conta do Google Drive foi conectada e os dados da nuvem foram sincronizados com sucesso.'
+            : 'Sua conta do Google Drive foi conectada com sucesso e um backup inicial foi realizado.'
+        );
+      }
     } catch (error: any) {
       Alert.alert('Erro ao Conectar', error?.message || 'Não foi possível conectar com o Google Drive.');
     } finally {
@@ -861,6 +890,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16, paddingHorizontal: 10 }}>
                         Conecte sua conta Google para sincronizar automaticamente seus dados em segundo plano e mantê-los seguros na pasta oculta AppData.
                       </Text>
+
+                      {/* Google Client ID (Personalizado / Opcional) */}
+                      <View style={{ width: '100%', marginBottom: 14 }}>
+                        <Text style={[styles.label, { color: colors.text, fontSize: 12, marginBottom: 4 }]}>
+                          Google Client ID (OAuth):
+                        </Text>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            {
+                              backgroundColor: colors.surfaceSubtle,
+                              color: colors.text,
+                              borderColor: colors.border,
+                              padding: 10,
+                              fontSize: 12,
+                            }
+                          ]}
+                          value={googleClientId}
+                          onChangeText={(val) => {
+                            setGoogleClientId(val);
+                            StorageService.saveGoogleClientId(val);
+                          }}
+                          placeholder="Padrão ou seu-id.apps.googleusercontent.com"
+                          placeholderTextColor={colors.textSecondary}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
+                          Opcional. Deixe em branco para usar o Client ID oficial do Lumen.
+                        </Text>
+                      </View>
 
                       <TouchableOpacity
                         style={[

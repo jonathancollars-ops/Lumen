@@ -12,6 +12,7 @@ import {
   lastAlertCalls,
   clearMockAlertCalls,
   mockAlert,
+  setMockAuthRequestPromptResult,
 } from './setup_env';
 import { BackupData, Subject, AppEvent, StudyTask } from '../src/types';
 
@@ -100,6 +101,34 @@ function setupMockDriveHttp() {
           statusText: 'Unauthorized',
           headers: { 'Content-Type': 'application/json' },
         }
+      );
+    }
+
+    // 2.5. Simulação do endpoint de Token OAuth2 (POST https://oauth2.googleapis.com/token)
+    if (url.includes('oauth2.googleapis.com/token') && method === 'POST') {
+      const bodyStr = init?.body?.toString() || '';
+      if (bodyStr.includes('grant_type=refresh_token')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'refreshed_access_token_via_oauth2_endpoint_999',
+            expires_in: 3600,
+            token_type: 'Bearer',
+            scope: GDRIVE_CONFIG.ALLOWED_DRIVE_SCOPE,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2.6. Simulação do endpoint de UserInfo (GET https://www.googleapis.com/oauth2/v3/userinfo)
+    if (url.includes('/oauth2/v3/userinfo') && method === 'GET') {
+      return new Response(
+        JSON.stringify({
+          email: 'aluno.lumen@ufrj.br',
+          verified_email: true,
+          name: 'Aluno Lumen',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -680,6 +709,177 @@ async function runGoogleDriveSyncTests(): Promise<void> {
         syncResultDisconnected.message.includes('não conectado') ||
         syncResultDisconnected.message.includes('Conecte sua conta'),
         'Mensagem orienta conectar a conta antes de sincronizar'
+      );
+    });
+
+    // =========================================================================
+    // CENÁRIO 5: Autenticação Real Google OAuth2 via expo-auth-session & Refresh Token
+    // =========================================================================
+    console.log('\n--- CENÁRIO 5: Autenticação Real Google OAuth2 & Refresh Token ---');
+
+    await test('5.1 iniciarLoginGoogle abre o fluxo oficial expo-auth-session com escopo estrito drive.appdata e salva tokens reais', async () => {
+      await GoogleDriveSyncService.clearSecureTokens();
+      networkFailureMode = 'none';
+
+      // Simula retorno positivo do Google OAuth2
+      setMockAuthRequestPromptResult({
+        type: 'success',
+        params: {
+          access_token: 'ya29.mock_real_google_oauth_token_777',
+          expires_in: '3600',
+        },
+      });
+
+      const success = await GoogleDriveSyncService.iniciarLoginGoogle();
+      assertEqual(success, true, 'iniciarLoginGoogle retorna true com sucesso');
+
+      // Verifica configuração da requisição enviada ao expo-auth-session
+      const lastConfig = (globalThis as any).__lastAuthRequestConfig;
+      assert(lastConfig !== undefined, 'AuthRequest foi instanciado');
+      assertEqual(lastConfig.responseType, 'token', 'AuthRequest utiliza responseType token');
+      assertEqual(lastConfig.redirectUri, 'lumen://oauthredirect', 'AuthRequest utiliza redirectUri lumen://oauthredirect');
+      assert(
+        lastConfig.scopes.includes(GDRIVE_CONFIG.ALLOWED_DRIVE_SCOPE),
+        'AuthRequest contém o escopo estrito drive.appdata'
+      );
+      assert(
+        !lastConfig.scopes.some((s: string) => s === 'https://www.googleapis.com/auth/drive'),
+        'AuthRequest NÃO contém o escopo perigoso drive geral'
+      );
+
+      // Verifica tokens salvos no SecureStore
+      const secureTokens = await GoogleDriveSyncService.getSecureTokens();
+      assert(secureTokens !== null, 'Tokens salvos com segurança no SecureStore');
+      assertEqual(
+        secureTokens?.accessToken,
+        'ya29.mock_real_google_oauth_token_777',
+        'AccessToken no SecureStore corresponde ao token emitido pela Google'
+      );
+      assert(
+        !secureTokens?.accessToken.startsWith('lumen_gdrive_tok_'),
+        'Token gravado NÃO é token falso ou mock'
+      );
+      const status = await GoogleDriveSyncService.getSyncStatus();
+      assertEqual(status.isConnected, true, 'getSyncStatus reporta isConnected = true após login real');
+    });
+
+    await test('5.2 iniciarLoginGoogle aceita Client ID customizado ou lê do StorageService', async () => {
+      // 1. Salva Client ID customizado no StorageService
+      const customClientId = '123456789-customstudentapp.apps.googleusercontent.com';
+      await StorageService.saveGoogleClientId(customClientId);
+      const loadedClientId = await StorageService.getGoogleClientId();
+      assertEqual(loadedClientId, customClientId, 'StorageService salvou e recuperou o Client ID customizado');
+
+      setMockAuthRequestPromptResult({
+        type: 'success',
+        params: {
+          access_token: 'ya29.token_with_custom_client_id',
+          expires_in: '3600',
+        },
+      });
+
+      await GoogleDriveSyncService.iniciarLoginGoogle();
+      let lastConfig = (globalThis as any).__lastAuthRequestConfig;
+      assertEqual(lastConfig.clientId, customClientId, 'iniciarLoginGoogle utilizou o Client ID salvo nas configurações');
+
+      // 2. Passa Client ID explícito por parâmetro
+      const explicitClientId = '987654321-explicitproject.apps.googleusercontent.com';
+      await GoogleDriveSyncService.iniciarLoginGoogle(explicitClientId);
+      lastConfig = (globalThis as any).__lastAuthRequestConfig;
+      assertEqual(lastConfig.clientId, explicitClientId, 'iniciarLoginGoogle respeitou o Client ID passado explicitamente por parâmetro');
+
+      // Limpa Client ID customizado para não afetar outros testes
+      await StorageService.saveGoogleClientId('');
+    });
+
+    await test('5.3 iniciarLoginGoogle trata cancelamento ou erro de forma graciosa', async () => {
+      await GoogleDriveSyncService.clearSecureTokens();
+
+      // Caso 1: Usuário fechou ou cancelou o diálogo de autenticação
+      setMockAuthRequestPromptResult({ type: 'cancel' });
+      const cancelResult = await GoogleDriveSyncService.iniciarLoginGoogle();
+      assertEqual(cancelResult, false, 'iniciarLoginGoogle retorna false quando o usuário cancela o diálogo');
+
+      // Caso 2: Usuário dispensou a tela
+      setMockAuthRequestPromptResult({ type: 'dismiss' });
+      const dismissResult = await GoogleDriveSyncService.iniciarLoginGoogle();
+      assertEqual(dismissResult, false, 'iniciarLoginGoogle retorna false quando o usuário descarta a tela');
+
+      // Caso 3: Erro retornado pela Google (ex: acesso negado)
+      setMockAuthRequestPromptResult({
+        type: 'error',
+        error: new Error('access_denied'),
+      });
+      let caughtError: Error | null = null;
+      try {
+        await GoogleDriveSyncService.iniciarLoginGoogle();
+      } catch (e: any) {
+        caughtError = e;
+      }
+      assert(caughtError !== null, 'Erro de autenticação da Google capturado e tratado');
+      assert(
+        caughtError?.message.includes('Falha ao conectar conta Google') ||
+        caughtError?.message.includes('Falha no login com Google'),
+        'Mensagem de erro amigável gerada'
+      );
+    });
+
+    await test('5.4 refreshAccessToken renova token expirado e getValidAccessToken retorna token atualizado', async () => {
+      networkFailureMode = 'none';
+
+      // 1. Salva token expirado com refresh_token válido
+      await GoogleDriveSyncService.saveSecureTokens({
+        accessToken: 'expired_access_token_888',
+        refreshToken: 'valid_refresh_token_xyz',
+        expiresAt: Date.now() - 5000,
+        userEmail: 'aluno.lumen@ufrj.br',
+      });
+
+      // 2. Executa refreshAccessToken
+      const newAccessToken = await GoogleDriveSyncService.refreshAccessToken();
+      assertEqual(
+        newAccessToken,
+        'refreshed_access_token_via_oauth2_endpoint_999',
+        'refreshAccessToken obteve novo access token via endpoint OAuth2'
+      );
+
+      // 3. getValidAccessToken retorna o token renovado
+      const validToken = await GoogleDriveSyncService.getValidAccessToken();
+      assertEqual(
+        validToken,
+        'refreshed_access_token_via_oauth2_endpoint_999',
+        'getValidAccessToken retorna o token renovado'
+      );
+
+      // 4. getSyncStatus reporta isConnected = true após a renovação
+      const status = await GoogleDriveSyncService.getSyncStatus();
+      assertEqual(status.isConnected, true, 'getSyncStatus reporta isConnected = true com o token renovado');
+    });
+
+    await test('5.5 connectAccount sem token delega para iniciarLoginGoogle e NUNCA gera tokens falsos', async () => {
+      await GoogleDriveSyncService.clearSecureTokens();
+
+      setMockAuthRequestPromptResult({
+        type: 'success',
+        params: {
+          access_token: 'ya29.genuine_token_via_connect_account',
+          expires_in: '3600',
+        },
+      });
+
+      // Chamada sem parâmetros (que antes gerava lumen_gdrive_tok_...)
+      const connected = await GoogleDriveSyncService.connectAccount();
+      assertEqual(connected, true, 'connectAccount executou com sucesso');
+
+      const tokens = await GoogleDriveSyncService.getSecureTokens();
+      assertEqual(
+        tokens?.accessToken,
+        'ya29.genuine_token_via_connect_account',
+        'connectAccount salvou o token real emitido pelo OAuth'
+      );
+      assert(
+        !tokens?.accessToken.includes('lumen_gdrive_tok_'),
+        'Nenhum token falso foi gerado'
       );
     });
 
