@@ -117,12 +117,25 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: 🏷️ Publish GitHub Release (On Main Branch or Tags)
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+      - name: 🏷️ Publish GitHub Release (On Main Branch)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v3.7.0-windows-build-{0}', github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('Lumen Desktop Windows {0}', github.ref_name) || format('Lumen Desktop Windows v3.7.0 (Build #{0})', github.run_number) }}
+          tag_name: v3.7.0-windows-build-${{ github.run_number }}
+          name: Lumen Desktop Windows v3.7.0 (Build #${{ github.run_number }})
+          files: |
+            build-windows-output/*
+          body_path: CHANGELOG.md
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Publish Official GitHub Release (On Tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Lumen Desktop Windows ${{ github.ref_name }}
           files: |
             build-windows-output/*
           body_path: CHANGELOG.md
