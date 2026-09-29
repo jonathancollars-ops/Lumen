@@ -85,6 +85,12 @@ async function runTestSuite() {
     });
   });
 
+  await test('T7: signInWeb() existe e lida de forma segura quando auth não está instanciado', async () => {
+    const res = await GoogleAuthService.signInWeb();
+    assert.equal(res, null);
+  });
+
+
   console.log('\n================================================================');
   console.log(`SUMMARY: ${passed}/${total} Tests Passed (${failed} Failed)`);
   console.log('================================================================');

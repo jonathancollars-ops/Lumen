@@ -335,6 +335,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         } else {
           Alert.alert('Erro', 'Não foi possível conectar com o Google. Tente novamente.');
         }
+      } else if (Platform.OS === 'web') {
+        // Web: native Firebase Popup flow (handles OAuth internally, no redirect_uri mismatch!)
+        const user = await GoogleAuthService.signInWeb();
+        if (user) {
+          setFirebaseUser(user);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Alert.alert('Conta Conectada!', `Bem-vindo, ${user.displayName ?? user.email}! Seu backup está sendo sincronizado.`);
+        }
       } else {
         // Mobile: expo-auth-session — response is handled in useEffect above
         await promptAsync();
@@ -894,7 +902,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             }
                           ]}
                           onPress={handleConnectGoogle}
-                          disabled={isConnectingCloud || (!isTauri && !request)}
+                          disabled={isConnectingCloud || (!isTauri && Platform.OS !== 'web' && !request)}
                           activeOpacity={0.8}
                         >
                           {isConnectingCloud ? (

@@ -9,6 +9,7 @@
 import {
   GoogleAuthProvider,
   signInWithCredential,
+  signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User,
@@ -87,6 +88,27 @@ export class GoogleAuthService {
       return null;
     }
   }
+
+  /**
+   * Web browser login using Firebase's native popup.
+   * Uses Firebase's pre-authorized auth handler domain so no redirect_uri mismatch occurs.
+   */
+  static async signInWeb(): Promise<User | null> {
+    if (!auth) return null;
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      return result.user;
+    } catch (error: any) {
+      if (error?.code === 'auth/popup-closed-by-user') {
+        return null;
+      }
+      console.error('[GoogleAuth Web] Falha ao autenticar com popup:', error);
+      throw error;
+    }
+  }
+
 
   // ─── Desktop / Tauri PKCE flow ─────────────────────────────────────────
 
