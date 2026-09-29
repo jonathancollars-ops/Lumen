@@ -200,6 +200,42 @@ if (typeof (globalThis as any).window === 'undefined') {
 (globalThis as any).window.localStorage = mockLocalStorage;
 (globalThis as any).window.sessionStorage = mockSessionStorage;
 
+// Mock Tauri IPC internals for desktop test simulation
+export const mockTauriState: {
+  availablePort: number;
+  oauthCode: string | null;
+  serverStartedPort: number | null;
+  openedUrls: string[];
+} = {
+  availablePort: 8080,
+  oauthCode: 'mock_tauri_pkce_auth_code_789',
+  serverStartedPort: null,
+  openedUrls: [],
+};
+
+export const resetMockTauriState = () => {
+  mockTauriState.availablePort = 8080;
+  mockTauriState.oauthCode = 'mock_tauri_pkce_auth_code_789';
+  mockTauriState.serverStartedPort = null;
+  mockTauriState.openedUrls = [];
+};
+
+(globalThis as any).window.__TAURI_INTERNALS__ = {
+  invoke: async (cmd: string, args?: any) => {
+    if (cmd === 'get_available_port') return mockTauriState.availablePort;
+    if (cmd === 'start_oauth_server') {
+      mockTauriState.serverStartedPort = args?.port;
+      return true;
+    }
+    if (cmd === 'poll_oauth_code') return mockTauriState.oauthCode;
+    if (cmd === 'plugin:shell|open') {
+      mockTauriState.openedUrls.push(args?.path);
+      return null;
+    }
+    return null;
+  },
+};
+
 // Mock expo-auth-session
 export let mockAuthRequestPromptResult: any = {
   type: 'success',

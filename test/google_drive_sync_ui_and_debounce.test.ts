@@ -344,29 +344,27 @@ async function runTestSuite() {
   // ── SUITE 6: UI & Architectural Integrity Inspection ──
   console.log('\n--- SUITE 6: UI & Architectural Integrity Inspection ---');
 
-  await test('SettingsModal.tsx includes Google Drive cloud sync UI components', () => {
+  await test('SettingsModal.tsx includes Firebase cloud sync UI components', () => {
     const modalPath = path.resolve(__dirname, '../src/components/SettingsModal.tsx');
     const content = fs.readFileSync(modalPath, 'utf8');
 
-    assert(content.includes('Sincronização em Nuvem (Google Drive)'), 'Contains section title');
-    assert(content.includes('Conectar com Google'), 'Contains Conectar com Google button');
+    assert(content.includes('Sincronização em Nuvem (Firebase)'), 'Contains Firebase section title');
+    assert(content.includes('Entrar com Google') || content.includes('Conectar com Google'), 'Contains sign-in button');
     assert(content.includes('Desconectar'), 'Contains Desconectar button');
-    assert(content.includes('Última sincronização:'), 'Contains last sync time display');
-    assert(content.includes('Sincronizar Agora'), 'Contains Sincronizar Agora button');
     assert(content.includes('ActivityIndicator'), 'Contains ActivityIndicator for loading spinner');
-    assert(content.includes('GoogleDriveSyncService'), 'Imports GoogleDriveSyncService');
-    pass('SettingsModal.tsx contains all required Google Drive UI elements');
+    assert(content.includes('GoogleAuthService'), 'Imports GoogleAuthService');
+    pass('SettingsModal.tsx contains all required Firebase Cloud Sync UI elements');
   });
 
-  await test('AppContext.tsx incorporates 5-second debounce and startup check', () => {
+  await test('AppContext.tsx incorporates 5-second debounce with Firebase', () => {
     const contextPath = path.resolve(__dirname, '../src/contexts/AppContext.tsx');
     const content = fs.readFileSync(contextPath, 'utf8');
 
     assert(content.includes('triggerDebouncedCloudSync'), 'Defines triggerDebouncedCloudSync');
     assert(content.includes('5000'), 'Uses 5000ms debounce interval');
-    assert(content.includes('checkAndSyncOnStartup'), 'Calls checkAndSyncOnStartup on mount');
-    assert(content.includes('GoogleDriveSyncService.sincronizar'), 'Calls sincronizar() in debounce');
-    pass('AppContext.tsx has 5-second debounce and startup verification');
+    assert(content.includes('FirebaseBackupService'), 'Uses FirebaseBackupService');
+    assert(content.includes('GoogleAuthService'), 'Uses GoogleAuthService for auth');
+    pass('AppContext.tsx has 5-second debounce and Firebase integration');
   });
 
   console.log('\n================================================================');

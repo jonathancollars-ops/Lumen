@@ -396,13 +396,13 @@ async function runLifecycleAndPermissionsTests() {
       (globalThis as any).fetch = async () => ({
         ok: true,
         json: async () => ({
-          tag_name: 'v3.7.0',
-          name: 'Lumen v3.7.0 - Super Atualização',
+          tag_name: 'v3.8.0',
+          name: 'Lumen v3.8.0 - Super Atualização',
           body: 'Novas funcionalidades e estabilidade.',
           assets: [
             {
-              name: 'lumen-v3.7.0-standalone.apk',
-              browser_download_url: 'https://github.com/jonathancollars-ops/organiza/releases/download/v3.7.0/lumen.apk',
+              name: 'lumen-v3.8.0-standalone.apk',
+              browser_download_url: 'https://github.com/jonathancollars-ops/organiza/releases/download/v3.8.0/lumen.apk',
             }
           ],
           published_at: '2026-08-26T12:00:00Z',
@@ -412,11 +412,11 @@ async function runLifecycleAndPermissionsTests() {
       const updateInfo = await AppUpdateService.checkForUpdates(true);
       assert(updateInfo !== null, 'checkForUpdates() detects valid remote update');
       assert(updateInfo?.hasUpdate === true, 'updateInfo.hasUpdate is true');
-      assert(updateInfo?.latestVersion === '3.7.0', 'updateInfo.latestVersion is 3.5.0');
+      assert(updateInfo?.latestVersion === '3.8.0', 'updateInfo.latestVersion is 3.8.0');
       assert(updateInfo?.downloadUrl.endsWith('.apk') === true, 'updateInfo.downloadUrl resolved to APK asset');
 
       // 5.6 Ignored Version State Check
-      await AppUpdateService.ignoreVersion('3.7.0');
+      await AppUpdateService.ignoreVersion('3.8.0');
       const ignoredCheck = await AppUpdateService.checkForUpdates(false);
       assert(ignoredCheck === null, 'checkForUpdates(false) skips check when version is in ignoredVersion state');
     } finally {

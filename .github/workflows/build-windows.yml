@@ -78,7 +78,7 @@ jobs:
 
           # Also include standalone portable executable if generated
           if [ -f "src-tauri/target/release/lumen.exe" ]; then
-            cp -v "src-tauri/target/release/lumen.exe" build-windows-output/lumen-v3.6.1-portable.exe
+            cp -v "src-tauri/target/release/lumen.exe" build-windows-output/lumen-v3.7.0-portable.exe
           fi
 
           # Verify that artifacts were collected
@@ -102,7 +102,7 @@ jobs:
       - name: 📤 Upload Windows Artifacts (EXE & MSI)
         uses: actions/upload-artifact@v4
         with:
-          name: lumen-v3.6.1-windows-setup
+          name: lumen-v3.7.0-windows-setup
           path: |
             build-windows-output/*
           retention-days: 30
@@ -112,8 +112,8 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.6.1-windows-build-${{ github.run_number }}
-          name: Lumen Desktop Windows v3.6.1 (Build #${{ github.run_number }})
+          tag_name: v3.7.0-windows-build-${{ github.run_number }}
+          name: Lumen Desktop Windows v3.7.0 (Build #${{ github.run_number }})
           files: |
             build-windows-output/*
           body_path: CHANGELOG.md
@@ -125,13 +125,13 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "### 🪟 Lumen 3.6.1 Windows Desktop CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### 🪟 Lumen 3.7.0 Windows Desktop CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ job.status == 'success' && '✅ SUCCESS' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Runner**: \`windows-latest\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact**: \`lumen-v3.6.1-windows-setup\` (.exe installer, .msi package, portable .exe)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: \`lumen-v3.7.0-windows-setup\` (.exe installer, .msi package, portable .exe)" >> $GITHUB_STEP_SUMMARY
           echo "- **Typecheck**: \`npx tsc --noEmit\` (0 errors)" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend Web Build**: \`npm run build:web\` (Expo Metro Export)" >> $GITHUB_STEP_SUMMARY
           echo "- **Tauri Action**: \`tauri-apps/tauri-action@v0\`" >> $GITHUB_STEP_SUMMARY

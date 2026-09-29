@@ -4,6 +4,7 @@ import {
   GoogleDriveSyncService,
   WebSecureVault,
   GDRIVE_CONFIG,
+  DRIVE_SCOPES,
   SECURE_STORAGE_KEYS,
 } from '../src/services/GoogleDriveSyncService';
 import { StorageService } from '../src/services/storage';
@@ -12,6 +13,8 @@ import {
   mockAsyncStorage,
   mockLocalStorage,
   mockSessionStorage,
+  mockTauriState,
+  resetMockTauriState,
   memoryStore,
 } from './setup_env';
 import { Platform } from 'react-native';
@@ -145,7 +148,20 @@ function setupMockHttpEndpoints() {
       return new Response(JSON.stringify(metadata), { status: 200 });
     }
 
-    // 6. Revoke endpoint
+    // 6. Token exchange endpoint (PKCE authorization_code)
+    if (url.includes('oauth2.googleapis.com/token')) {
+      return new Response(
+        JSON.stringify({
+          access_token: 'ya29.mock_pkce_access_token_desktop',
+          refresh_token: '1//mock_pkce_refresh_token_desktop',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 7. Revoke endpoint
     if (url.includes('oauth2.googleapis.com/revoke')) {
       return new Response('{}', { status: 200 });
     }
@@ -302,6 +318,63 @@ async function runWebDesktopOAuthTests() {
     assert.strictEqual(tokens?.accessToken, 'ya29.web_callback_token', 'Captured token matches');
 
     pass('checkUrlForOAuthCallback successfully intercepts OAuth response from URL');
+  });
+
+  await test('2.4 generateCodeVerifier e generateCodeChallenge geram tokens PKCE válidos RFC 7636', async () => {
+    const verifier = GoogleDriveSyncService.generateCodeVerifier();
+    assert(verifier.length >= 43, 'code_verifier length must be at least 43 characters');
+    assert(!/[+/=]/.test(verifier), 'code_verifier must be base64url encoded without +, /, =');
+
+    const challenge = await GoogleDriveSyncService.generateCodeChallenge(verifier);
+    assert(challenge.length >= 43, 'code_challenge length must be at least 43 characters');
+    assert(!/[+/=]/.test(challenge), 'code_challenge must be base64url encoded without +, /, =');
+
+    // Deterministic challenge check
+    const challenge2 = await GoogleDriveSyncService.generateCodeChallenge(verifier);
+    assert.strictEqual(challenge, challenge2, 'Same verifier must generate identical challenge');
+
+    pass('PKCE verifier and challenge comply with RFC 7636 (S256 base64url)');
+  });
+
+  await test('2.5 exchangeCodeForTokens troca authorization code por access e refresh tokens', async () => {
+    const verifier = GoogleDriveSyncService.generateCodeVerifier();
+    const redirectUri = 'http://127.0.0.1:8080/oauth2callback';
+
+    const tokens = await GoogleDriveSyncService.exchangeCodeForTokens('test_auth_code_123', verifier, redirectUri);
+    assert.notStrictEqual(tokens, null, 'Tokens should not be null');
+    assert.strictEqual(tokens?.access_token, 'ya29.mock_pkce_access_token_desktop');
+    assert.strictEqual(tokens?.refresh_token, '1//mock_pkce_refresh_token_desktop');
+
+    pass('exchangeCodeForTokens successfully trades authorization code with Google token endpoint');
+  });
+
+  await test('2.6 promptWebOAuth executa fluxo PKCE completo via servidor loopback Tauri no Desktop', async () => {
+    resetMockTauriState();
+    (Platform as any).OS = 'web';
+    GoogleDriveSyncService.resetMemoryCache();
+    await GoogleDriveSyncService.clearSecureTokens();
+
+    const accessToken = await GoogleDriveSyncService.promptWebOAuth();
+    assert.notStrictEqual(accessToken, null, 'promptWebOAuth should return valid access token string');
+    assert.strictEqual(accessToken, 'ya29.mock_pkce_access_token_desktop');
+
+    // Verify Tauri interactions
+    assert.strictEqual(mockTauriState.serverStartedPort, 8080, 'Tauri start_oauth_server was invoked with port 8080');
+    assert.strictEqual(mockTauriState.openedUrls.length, 1, 'System browser was opened via Tauri plugin-shell');
+    const openedUrl = mockTauriState.openedUrls[0];
+    assert(openedUrl.startsWith('https://accounts.google.com/o/oauth2/v2/auth?'), 'Opened URL is Google OAuth endpoint');
+    assert(openedUrl.includes('response_type=code'), 'PKCE uses response_type=code');
+    assert(openedUrl.includes('code_challenge_method=S256'), 'Uses S256 code challenge method');
+    assert(openedUrl.includes('redirect_uri=http%3A%2F%2F127.0.0.1%3A8080%2Foauth2callback'), 'Uses loopback redirectUri');
+
+    // Verify tokens were securely persisted in WebSecureVault
+    const status = await GoogleDriveSyncService.getSyncStatus();
+    assert.strictEqual(status.isConnected, true, 'User is marked connected');
+    const loadedTokens = await GoogleDriveSyncService.getSecureTokens();
+    assert.strictEqual(loadedTokens?.accessToken, 'ya29.mock_pkce_access_token_desktop');
+    assert.strictEqual(loadedTokens?.refreshToken, '1//mock_pkce_refresh_token_desktop');
+
+    pass('promptWebOAuth successfully executes PKCE Authorization Code flow with Tauri loopback');
   });
 
   // ─────────────────────────────────────────────────────────────

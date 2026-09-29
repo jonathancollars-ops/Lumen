@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import * as Haptics from 'expo-haptics';
+import { Platform } from 'react-native';
 import { StorageService } from '../services/storage';
 import { AttendanceService } from '../services/AttendanceService';
 import { NotificationService } from '../services/notifications';
 import { CourseCRService } from '../services/CourseCRService';
-import { GoogleDriveSyncService } from '../services/GoogleDriveSyncService';
+import { FirebaseBackupService, LumenBackupData } from '../services/FirebaseBackupService';
+import { GoogleAuthService } from '../services/GoogleAuthService';
 import { 
   AppEvent, 
   ThemeType, 
@@ -19,7 +21,6 @@ import {
   AIConfig,
   ActiveTimerState,
   SavedTimerState,
-  GoogleDriveSyncResult 
 } from '../types';
 import { 
   TimerService, 
@@ -28,6 +29,7 @@ import {
   clearTimerState as serviceClearTimerState, 
   toActiveTimerState 
 } from '../services/TimerService';
+import { APP_VERSION } from '../utils/version';
 
 export interface AppContextData {
   // Theme & Settings
@@ -86,10 +88,13 @@ export interface AppContextData {
   addOrUpdateEvent: (event: AppEvent) => Promise<void>;
   updateAIConfig: (config: AIConfig) => Promise<boolean>;
 
-  // Cloud Sync (Google Drive)
+  // Cloud Sync (Firebase Firestore)
   triggerDebouncedCloudSync: () => void;
-  syncCloudNow: () => Promise<GoogleDriveSyncResult>;
+  syncCloudNow: () => Promise<{ success: boolean; message: string }>;
+  /** UID do usuário Firebase autenticado, ou null se não conectado. */
+  firebaseUserId: string | null;
 }
+
 
 const AppContext = createContext<AppContextData | undefined>(undefined);
 
@@ -266,83 +271,189 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  // ==========================================================================
-  // GOOGLE DRIVE BACKGROUND AUTO-SYNC (5-SECOND DEBOUNCE) & STARTUP CHECK
-  // ==========================================================================
-  const cloudSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isCloudSyncingRef = useRef<boolean>(false);
 
+  // ==========================================================================
+  // FIREBASE FIRESTORE BACKGROUND AUTO-SYNC (5-SECOND DEBOUNCE)
+  // ==========================================================================
+  const [firebaseUserId, setFirebaseUserId] = useState<string | null>(
+    () => GoogleAuthService.getCurrentUser()?.uid ?? null
+  );
+  const backupServiceRef   = useRef<FirebaseBackupService | null>(null);
+  const cloudSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isCloudSyncingRef   = useRef<boolean>(false);
+
+  /** Build the snapshot payload from current state. */
+  const buildBackupPayload = useCallback(
+    (
+      currentEvents: AppEvent[],
+      currentTasks: StudyTask[],
+      currentStudySessions: StudySession[],
+      currentSubjects: Subject[],
+      currentAttendances: AttendanceRecord[],
+      currentSemesters: Semester[],
+      currentGamification: GamificationData | null,
+      currentStreak: StudyStreak,
+      currentSettings: AppSettings,
+      currentAiConfig: AIConfig,
+    ) => ({
+      events:        currentEvents,
+      tasks:         currentTasks,
+      studySessions: currentStudySessions,
+      subjects:      currentSubjects,
+      attendances:   currentAttendances,
+      semesters:     currentSemesters,
+      gamification:  currentGamification as Record<string, any> | null,
+      streak:        currentStreak as unknown as Record<string, any>,
+      settings:      currentSettings as unknown as Record<string, any>,
+      aiConfig:      currentAiConfig as unknown as Record<string, any>,
+      appVersion:    APP_VERSION,
+      devicePlatform: (Platform.OS === 'android' ? 'android' : 'windows') as 'android' | 'windows',
+    }),
+    []
+  );
+
+  /** Schedule an upload with 5-second debounce. No-op if not logged in. */
   const triggerDebouncedCloudSync = useCallback(() => {
-    if (cloudSyncTimeoutRef.current) {
-      clearTimeout(cloudSyncTimeoutRef.current);
-    }
+    if (!backupServiceRef.current) return;
+    if (cloudSyncTimeoutRef.current) clearTimeout(cloudSyncTimeoutRef.current);
     cloudSyncTimeoutRef.current = setTimeout(async () => {
+      if (isCloudSyncingRef.current || !backupServiceRef.current) return;
+      isCloudSyncingRef.current = true;
       try {
-        const status = await GoogleDriveSyncService.getSyncStatus();
-        if (status.isConnected && !isCloudSyncingRef.current) {
-          isCloudSyncingRef.current = true;
-          await GoogleDriveSyncService.sincronizar();
-        }
+        // Capture state at time of execution via closure — values from current render
+        // are stale here, so we read them from storage for accuracy
+        const [
+          latestEvents, latestTasks, latestSessions, latestSubjects,
+          latestAttendances, latestSemesters, latestGamification,
+          latestStreak, latestSettings, latestAIConfig,
+        ] = await Promise.all([
+          StorageService.getEvents().catch(() => [] as AppEvent[]),
+          StorageService.getTasks().catch(() => [] as StudyTask[]),
+          StorageService.getStudySessions().catch(() => [] as StudySession[]),
+          StorageService.getSubjects().catch(() => [] as Subject[]),
+          StorageService.getAttendances().catch(() => [] as AttendanceRecord[]),
+          StorageService.getSemesters().catch(() => [] as Semester[]),
+          StorageService.getGamificationData().catch(() => null),
+          StorageService.getStreak().catch(() => null),
+          StorageService.getSettings().catch(() => null),
+          StorageService.getAIConfig().catch(() => null),
+        ]);
+        await backupServiceRef.current.uploadBackup(buildBackupPayload(
+          latestEvents, latestTasks, latestSessions, latestSubjects,
+          latestAttendances, latestSemesters, latestGamification,
+          latestStreak ?? { currentStreak: 0, longestStreak: 0, lastStudyDate: '' },
+          latestSettings ?? {} as AppSettings,
+          latestAIConfig ?? {} as AIConfig,
+        ));
       } catch (err) {
-        console.warn('[AppContext] Falha na sincronização automática em nuvem (Google Drive):', err);
+        console.warn('[AppContext] Falha no auto-sync Firebase:', err);
       } finally {
         isCloudSyncingRef.current = false;
       }
     }, 5000);
-  }, []);
+  }, [buildBackupPayload]);
 
-  const syncCloudNow = async (): Promise<GoogleDriveSyncResult> => {
+  /** Force-upload immediately (for manual "Sincronizar agora" button). */
+  const syncCloudNow = async (): Promise<{ success: boolean; message: string }> => {
+    if (!backupServiceRef.current) {
+      return { success: false, message: 'Usuário não conectado ao Firebase.' };
+    }
     if (cloudSyncTimeoutRef.current) {
       clearTimeout(cloudSyncTimeoutRef.current);
       cloudSyncTimeoutRef.current = null;
     }
     isCloudSyncingRef.current = true;
     try {
-      const result = await GoogleDriveSyncService.sincronizar();
-      if (result.success && result.action === 'download') {
-        await loadData();
-      }
-      return result;
+      const [
+        latestEvents, latestTasks, latestSessions, latestSubjects,
+        latestAttendances, latestSemesters, latestGamification,
+        latestStreak, latestSettings, latestAIConfig,
+      ] = await Promise.all([
+        StorageService.getEvents().catch(() => [] as AppEvent[]),
+        StorageService.getTasks().catch(() => [] as StudyTask[]),
+        StorageService.getStudySessions().catch(() => [] as StudySession[]),
+        StorageService.getSubjects().catch(() => [] as Subject[]),
+        StorageService.getAttendances().catch(() => [] as AttendanceRecord[]),
+        StorageService.getSemesters().catch(() => [] as Semester[]),
+        StorageService.getGamificationData().catch(() => null),
+        StorageService.getStreak().catch(() => null),
+        StorageService.getSettings().catch(() => null),
+        StorageService.getAIConfig().catch(() => null),
+      ]);
+      await backupServiceRef.current.uploadBackup(buildBackupPayload(
+        latestEvents, latestTasks, latestSessions, latestSubjects,
+        latestAttendances, latestSemesters, latestGamification,
+        latestStreak ?? { currentStreak: 0, longestStreak: 0, lastStudyDate: '' },
+        latestSettings ?? {} as AppSettings,
+        latestAIConfig ?? {} as AIConfig,
+      ));
+      return { success: true, message: 'Backup enviado para o Firebase com sucesso.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message ?? 'Falha ao sincronizar.' };
     } finally {
       isCloudSyncingRef.current = false;
     }
   };
 
+  // ── Auth state observer + startup download ────────────────────────────────
   useEffect(() => {
     let isMounted = true;
 
-    const initializeWithCloudCheck = async () => {
-      // 0. Verifica se há retorno de autenticação OAuth na URL (Web / Desktop Tauri)
-      try {
-        await GoogleDriveSyncService.checkUrlForOAuthCallback();
-      } catch (oauthErr) {
-        console.warn('[AppContext] Falha ao verificar callback OAuth na URL:', oauthErr);
-      }
-
-      // 1. Carrega dados locais de forma assíncrona na montagem
+    // 1. Load local data immediately
+    const init = async () => {
       await loadData();
 
-      // 2. Verificação na inicialização do app: checar se há alterações na nuvem
-      try {
-        const cloudResult = await GoogleDriveSyncService.checkAndSyncOnStartup();
-        if (cloudResult && cloudResult.success && isMounted) {
-          // Nuvem tinha alterações mais recentes que foram restauradas; recarrega estado local
-          await loadData();
+      // 2. If already logged in, download remote backup and merge
+      const currentUser = GoogleAuthService.getCurrentUser();
+      if (currentUser && isMounted) {
+        const svc = new FirebaseBackupService(currentUser.uid);
+        backupServiceRef.current = svc;
+        setFirebaseUserId(currentUser.uid);
+        try {
+          const remote = await svc.downloadBackup();
+          if (remote && isMounted) {
+            // Apply remote data (it will be merged with local on next loadData)
+            await StorageService.importBackup(remote as any);
+            await loadData();
+          }
+        } catch (e) {
+          console.warn('[AppContext] Falha ao baixar backup Firebase na inicialização:', e);
         }
-      } catch (cloudStartupErr) {
-        console.warn('[AppContext] Falha ao verificar nuvem na inicialização (não bloqueante):', cloudStartupErr);
       }
     };
 
-    initializeWithCloudCheck();
+    init();
+
+    // 3. Listen for future auth changes (login / logout)
+    const unsubscribe = GoogleAuthService.onAuthChange(async (user) => {
+      if (!isMounted) return;
+      if (user) {
+        const svc = new FirebaseBackupService(user.uid);
+        backupServiceRef.current = svc;
+        setFirebaseUserId(user.uid);
+        try {
+          const remote = await svc.downloadBackup();
+          if (remote && isMounted) {
+            await StorageService.importBackup(remote as any);
+            await loadData();
+          }
+        } catch (e) {
+          console.warn('[AppContext] Falha ao baixar backup após login:', e);
+        }
+      } else {
+        backupServiceRef.current = null;
+        setFirebaseUserId(null);
+      }
+    });
 
     return () => {
       isMounted = false;
-      if (cloudSyncTimeoutRef.current) {
-        clearTimeout(cloudSyncTimeoutRef.current);
-      }
+      unsubscribe();
+      if (cloudSyncTimeoutRef.current) clearTimeout(cloudSyncTimeoutRef.current);
     };
   }, []);
+
+
 
   const handleThemeToggle = async () => {
     if (settings.hapticsEnabled) {
@@ -602,7 +713,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addOrUpdateEvent,
     updateAIConfig,
     triggerDebouncedCloudSync,
-    syncCloudNow
+    syncCloudNow,
+    firebaseUserId,
   };
 
   return (

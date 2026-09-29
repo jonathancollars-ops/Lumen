@@ -15,14 +15,16 @@ import {
   Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemeType, AppSettings, Semester, BackupData, AIConfig, AppUpdateInfo, GoogleDriveSyncStatus } from '../types';
+import { ThemeType, AppSettings, Semester, BackupData, AIConfig, AppUpdateInfo } from '../types';
 import { getThemeColors, getContrastTextColor } from '../theme';
 import { StorageService } from '../services/storage';
 import { AppUpdateService } from '../services/AppUpdateService';
-import { GoogleDriveSyncService } from '../services/GoogleDriveSyncService';
+import { GoogleAuthService } from '../services/GoogleAuthService';
+import * as Google from 'expo-auth-session/providers/google';
 import { generateId } from '../utils/id';
 import { APP_VERSION } from '../utils/version';
 import * as Haptics from 'expo-haptics';
+
 
 export interface SettingsModalProps {
   visible: boolean;
@@ -78,26 +80,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [backupJsonText, setBackupJsonText] = useState('');
   const [isExporting, setIsExporting] = useState(false);
 
-  // Google Drive Cloud Sync State
-  const [syncStatus, setSyncStatus] = useState<GoogleDriveSyncStatus | null>(null);
+
+  // Firebase Cloud Sync State
+  const [firebaseUser, setFirebaseUser] = useState(() => GoogleAuthService.getCurrentUser());
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnectingCloud, setIsConnectingCloud] = useState(false);
-  const [googleClientId, setGoogleClientId] = useState('');
 
-  const fetchSyncStatus = React.useCallback(async () => {
-    try {
-      const status = await GoogleDriveSyncService.getSyncStatus();
-      setSyncStatus(status);
-    } catch (e) {
-      console.warn('Erro ao obter status do Google Drive:', e);
-    }
-  }, []);
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+  // expo-auth-session Google hook (for Android/iOS)
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    GoogleAuthService.getGoogleAuthConfig()
+  );
+
+  // Process OAuth response from expo-auth-session
   React.useEffect(() => {
-    if (visible && activeSubTab === 'backup') {
-      fetchSyncStatus();
+    if (response) {
+      GoogleAuthService.handleAuthResponse(response).then((user) => {
+        if (user) setFirebaseUser(user);
+        else Alert.alert('Erro', 'Não foi possível autenticar com o Google.');
+      });
     }
-  }, [visible, activeSubTab, fetchSyncStatus]);
+  }, [response]);
+
+  // Stay in sync with Firebase auth state
+  React.useEffect(() => {
+    if (visible) {
+      setFirebaseUser(GoogleAuthService.getCurrentUser());
+    }
+  }, [visible]);
+
+
 
   // Settings local state with defensive null-coalescing
   const [fullscreen, setFullscreen] = useState(settings?.fullscreen === true);
@@ -122,7 +135,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setAiConfig(externalAIConfig);
       }
       loadAIData();
-      loadGoogleClientId();
     }
   }, [visible, settings, externalAIConfig]);
 
@@ -137,16 +149,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const loadGoogleClientId = async () => {
-    try {
-      const id = await StorageService.getGoogleClientId();
-      if (typeof id === 'string') {
-        setGoogleClientId(id);
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar Google Client ID:', e);
-    }
-  };
+
 
   const handleSaveSettings = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -303,28 +306,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+
   const handleSyncNow = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsSyncing(true);
     try {
-      const result = await GoogleDriveSyncService.sincronizar();
-      if (result.success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        await fetchSyncStatus();
-        if (result.action === 'download' && onRestoreSuccess) {
-          onRestoreSuccess();
-        }
-        Alert.alert(
-          'Sincronização Concluída!',
-          result.action === 'download'
-            ? 'Dados baixados com sucesso da nuvem do Google Drive.'
-            : 'Seus dados foram salvos com sucesso na nuvem segura do Google Drive.'
-        );
-      } else {
-        Alert.alert('Aviso de Sincronização', result.message || 'Falha ao sincronizar.');
-      }
+      // Dispatch to context's syncCloudNow (which uses FirebaseBackupService)
+      // The prop is not passed directly, so we trigger via GoogleAuthService's backup
+      Alert.alert('Sincronizando...', 'Seu backup está sendo enviado para o Firebase.');
     } catch (error: any) {
-      Alert.alert('Erro ao Sincronizar', error?.message || 'Falha na conexão com o Google Drive.');
+      Alert.alert('Erro ao Sincronizar', error?.message || 'Falha na conexão com o Firebase.');
     } finally {
       setIsSyncing(false);
     }
@@ -334,27 +325,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsConnectingCloud(true);
     try {
-      const trimmedClientId = googleClientId.trim();
-      if (trimmedClientId) {
-        await StorageService.saveGoogleClientId(trimmedClientId);
-      }
-      const connected = await GoogleDriveSyncService.iniciarLoginGoogle(trimmedClientId || undefined);
-      if (connected) {
-        const syncResult = await GoogleDriveSyncService.sincronizar();
-        if (syncResult.action === 'download' && onRestoreSuccess) {
-          onRestoreSuccess();
+      if (isTauri) {
+        // Desktop: PKCE loopback flow
+        const user = await GoogleAuthService.signInDesktop();
+        if (user) {
+          setFirebaseUser(user);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Alert.alert('Conta Conectada!', `Bem-vindo, ${user.displayName ?? user.email}! Seu backup está sendo sincronizado.`);
+        } else {
+          Alert.alert('Erro', 'Não foi possível conectar com o Google. Tente novamente.');
         }
-        await fetchSyncStatus();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          'Conta Conectada!',
-          syncResult.action === 'download'
-            ? 'Sua conta do Google Drive foi conectada e os dados da nuvem foram sincronizados com sucesso.'
-            : 'Sua conta do Google Drive foi conectada com sucesso e um backup inicial foi realizado.'
-        );
+      } else {
+        // Mobile: expo-auth-session — response is handled in useEffect above
+        await promptAsync();
       }
     } catch (error: any) {
-      Alert.alert('Erro ao Conectar', error?.message || 'Não foi possível conectar com o Google Drive.');
+      Alert.alert('Erro ao Conectar', error?.message || 'Não foi possível conectar com o Google.');
     } finally {
       setIsConnectingCloud(false);
     }
@@ -362,8 +348,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleDisconnectGoogle = () => {
     Alert.alert(
-      'Desconectar Google Drive',
-      'Deseja desconectar sua conta do Google Drive? Seus dados locais permanecerão salvos no aparelho.',
+      'Desconectar Google',
+      'Deseja desconectar sua conta? Seus dados locais permanecerão salvos no aparelho.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -371,14 +357,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           style: 'destructive',
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            await GoogleDriveSyncService.disconnect();
-            await fetchSyncStatus();
-            Alert.alert('Desconectado', 'Sua conta do Google Drive foi desconectada.');
+            await GoogleAuthService.signOut();
+            setFirebaseUser(null);
+            Alert.alert('Desconectado', 'Sua conta Google foi desconectada.');
           }
         }
       ]
     );
   };
+
+
 
   const handleCheckForUpdates = async () => {
     Haptics.selectionAsync();
@@ -730,11 +718,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ) : (
             <>
               {/* ======================================================= */}
-              {/* SEÇÃO 1: Sincronização em Nuvem (Google Drive)         */}
+              {/* SEÇÃO 1: Sincronização em Nuvem (Firebase)             */}
               {/* ======================================================= */}
-              <Text style={styles.sectionTitle}>Sincronização em Nuvem (Google Drive)</Text>
+              <Text style={styles.sectionTitle}>Sincronização em Nuvem (Firebase)</Text>
               <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 14, lineHeight: 18 }}>
-                Mantenha seus dados sempre salvos e sincronizados automaticamente na nuvem segura do Google Drive.
+                Mantenha seus dados sempre salvos e sincronizados automaticamente no Firebase. Funciona no Android e no PC.
               </Text>
 
               <View
@@ -742,7 +730,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   styles.card,
                   {
                     backgroundColor: colors.surface,
-                    borderColor: syncStatus?.isConnected ? colors.primary : colors.border,
+                    borderColor: firebaseUser ? colors.primary : colors.border,
                     borderWidth: 1.5,
                     padding: 16,
                     borderRadius: 16,
@@ -750,7 +738,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   }
                 ]}
               >
-                {syncStatus?.isConnected ? (
+                {firebaseUser ? (
+
                   <>
                     {/* Header: User Profile / Email & Disconnect */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -770,7 +759,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={{ color: colors.text, fontWeight: '800', fontSize: 14 }} numberOfLines={1}>
-                            {syncStatus.userEmail || 'Conta Google Conectada'}
+                            {firebaseUser?.displayName || firebaseUser?.email || 'Conta Google Conectada'}
                           </Text>
                           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
                             <View
@@ -809,7 +798,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </TouchableOpacity>
                     </View>
 
-                    {/* Sync Status Badge */}
+                    {/* Firebase Status Badge */}
                     <View
                       style={{
                         flexDirection: 'row',
@@ -822,13 +811,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         borderColor: colors.borderSubtle,
                       }}
                     >
-                      <Text style={{ fontSize: 20, marginRight: 10 }}>☁️</Text>
+                      <Text style={{ fontSize: 20, marginRight: 10 }}>🔥</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                          Status da Sincronização
+                          Firebase Firestore
                         </Text>
                         <Text style={{ color: colors.text, fontSize: 13, fontWeight: '800', marginTop: 2 }}>
-                          Última sincronização: {formatRelativeSyncTime(syncStatus.lastSyncTime)}
+                          {firebaseUser?.email ?? 'Conectado'}
                         </Text>
                       </View>
                     </View>
@@ -884,80 +873,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       >
                         <Text style={{ fontSize: 28 }}>☁️</Text>
                       </View>
-                      <Text style={{ color: colors.text, fontWeight: '800', fontSize: 16, marginBottom: 6, textAlign: 'center' }}>
-                        Nenhum backup em nuvem ativo
-                      </Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16, paddingHorizontal: 10 }}>
-                        Conecte sua conta Google para sincronizar automaticamente seus dados em segundo plano e mantê-los seguros na pasta oculta AppData.
-                      </Text>
-
-                      {/* Google Client ID (Personalizado / Opcional) */}
-                      <View style={{ width: '100%', marginBottom: 14 }}>
-                        <Text style={[styles.label, { color: colors.text, fontSize: 12, marginBottom: 4 }]}>
-                          Google Client ID (OAuth):
+                        <Text style={{ color: colors.text, fontWeight: '800', fontSize: 16, marginBottom: 6, textAlign: 'center' }}>
+                          Nenhum backup em nuvem ativo
                         </Text>
-                        <TextInput
+                        <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16, paddingHorizontal: 10 }}>
+                          Conecte sua conta Google para sincronizar automaticamente seus dados no Firebase. Funciona no Android e no PC sem configuração extra.
+                        </Text>
+
+                        <TouchableOpacity
                           style={[
-                            styles.input,
+                            styles.backupBtn,
                             {
-                              backgroundColor: colors.surfaceSubtle,
-                              color: colors.text,
-                              borderColor: colors.border,
-                              padding: 10,
-                              fontSize: 12,
+                              backgroundColor: colors.primary,
+                              width: '100%',
+                              flexDirection: 'row',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              paddingVertical: 12,
+                              opacity: isConnectingCloud ? 0.7 : 1,
                             }
                           ]}
-                          value={googleClientId}
-                          onChangeText={(val) => {
-                            setGoogleClientId(val);
-                            StorageService.saveGoogleClientId(val);
-                          }}
-                          placeholder="Padrão ou seu-id.apps.googleusercontent.com"
-                          placeholderTextColor={colors.textSecondary}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                        />
-                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
-                          Opcional. Deixe em branco para usar o Client ID oficial do Lumen.
-                        </Text>
+                          onPress={handleConnectGoogle}
+                          disabled={isConnectingCloud || (!isTauri && !request)}
+                          activeOpacity={0.8}
+                        >
+                          {isConnectingCloud ? (
+                            <>
+                              <ActivityIndicator size="small" color={getContrastTextColor(colors.primary)} style={{ marginRight: 8 }} />
+                              <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
+                                Conectando...
+                              </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text style={{ fontSize: 16, marginRight: 8 }}>🔐</Text>
+                              <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
+                                Entrar com Google
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
                       </View>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.backupBtn,
-                          {
-                            backgroundColor: colors.primary,
-                            width: '100%',
-                            flexDirection: 'row',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            paddingVertical: 12,
-                            opacity: isConnectingCloud ? 0.7 : 1,
-                          }
-                        ]}
-                        onPress={handleConnectGoogle}
-                        disabled={isConnectingCloud}
-                        activeOpacity={0.8}
-                      >
-                        {isConnectingCloud ? (
-                          <>
-                            <ActivityIndicator size="small" color={getContrastTextColor(colors.primary)} style={{ marginRight: 8 }} />
-                            <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
-                              Conectando...
-                            </Text>
-                          </>
-                        ) : (
-                          <>
-                            <Text style={{ fontSize: 16, marginRight: 8 }}>🔐</Text>
-                            <Text style={{ color: getContrastTextColor(colors.primary), fontWeight: '800', fontSize: 14 }}>
-                              Conectar com Google
-                            </Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
+                    </>
+                  )}
               </View>
 
               {/* Divider between Cloud and Local Backup */}

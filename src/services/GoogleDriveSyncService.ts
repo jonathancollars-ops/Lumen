@@ -56,6 +56,12 @@ export const GDRIVE_CONFIG = {
   DEFAULT_TIMEOUT_MS: 30000,
 };
 
+export const DRIVE_SCOPES: readonly string[] = [
+  GDRIVE_CONFIG.ALLOWED_DRIVE_SCOPE,
+  'https://www.googleapis.com/auth/userinfo.email',
+  'openid',
+];
+
 export const FORBIDDEN_DRIVE_SCOPES: readonly string[] = [
   'https://www.googleapis.com/auth/drive',
   'https://www.googleapis.com/auth/drive.file',
@@ -274,6 +280,15 @@ export class WebSecureVault {
 // ============================================================================
 
 export class GoogleDriveSyncService {
+  public static clientId: string = GDRIVE_CONFIG.DEFAULT_CLIENT_ID;
+
+  public get clientId(): string {
+    return GoogleDriveSyncService.clientId;
+  }
+  public set clientId(value: string) {
+    GoogleDriveSyncService.clientId = value;
+  }
+
   /**
    * Resets in-memory token state. (Used primarily for testing cold starts).
    */
@@ -289,9 +304,39 @@ export class GoogleDriveSyncService {
    * Securely saves OAuth tokens in hardware-backed SecureStore.
    * NEVER saves tokens to plain AsyncStorage.
    */
-  public static async saveSecureTokens(tokens: GoogleDriveTokens): Promise<boolean> {
-    if (!tokens || !tokens.accessToken || typeof tokens.accessToken !== 'string') {
+  public static async saveSecureTokens(
+    tokensOrAccessToken: GoogleDriveTokens | string,
+    refreshToken?: string
+  ): Promise<boolean> {
+    if (!tokensOrAccessToken) {
       throw new Error('[GoogleDriveSyncService] Token de acesso inválido ou ausente.');
+    }
+
+    let tokens: GoogleDriveTokens;
+    if (typeof tokensOrAccessToken === 'string') {
+      const sanitizedAccessToken = tokensOrAccessToken.trim();
+      if (!sanitizedAccessToken) {
+        throw new Error('[GoogleDriveSyncService] Token de acesso não pode ser vazio.');
+      }
+
+      let userEmail: string | undefined;
+      try {
+        userEmail = (await this.fetchUserEmail(sanitizedAccessToken)) || undefined;
+      } catch {}
+
+      tokens = {
+        accessToken: sanitizedAccessToken,
+        refreshToken: refreshToken?.trim() || undefined,
+        userEmail: userEmail || 'estudante@lumen.app',
+        tokenType: 'Bearer',
+        scope: GDRIVE_CONFIG.ALLOWED_DRIVE_SCOPE,
+        expiresAt: Date.now() + 3600 * 1000,
+      };
+    } else {
+      if (!tokensOrAccessToken.accessToken || typeof tokensOrAccessToken.accessToken !== 'string') {
+        throw new Error('[GoogleDriveSyncService] Token de acesso inválido ou ausente.');
+      }
+      tokens = tokensOrAccessToken;
     }
 
     try {
@@ -1284,144 +1329,119 @@ export class GoogleDriveSyncService {
   }
 
   /**
-   * Executes interactive OAuth flow for Web and Desktop (Tauri).
-   * Opens the system browser / popup window, intercepts the OAuth token response,
-   * validates CSRF state, and securely persists the credentials in WebSecureVault.
+   * Executes PKCE Authorization Code Flow for Web and Desktop (Tauri).
+   * Replaces deprecated Implicit Flow (`response_type: token`) with RFC 7636 PKCE.
    */
   public static async promptWebOAuth(options?: {
     clientId?: string;
     redirectUri?: string;
     email?: string;
-  }): Promise<boolean> {
-    const clientId = options?.clientId || GDRIVE_CONFIG.DEFAULT_CLIENT_ID;
-    const redirectUri = options?.redirectUri || this.getDefaultWebRedirectUri();
-    const state = this.generateRandomHex(16);
-
-    // Save pending state for CSRF validation
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      window.sessionStorage.setItem('__lumen_oauth_pending_state', state);
+  }): Promise<string | null> {
+    if (options?.clientId) {
+      this.clientId = options.clientId;
     }
 
-    const authUrl = this.buildOAuthUrl({ clientId, redirectUri, state });
+    // 1. Gerar code_verifier e code_challenge (PKCE)
+    const codeVerifier = this.generateCodeVerifier();
+    const codeChallenge = await this.generateCodeChallenge(codeVerifier);
 
-    return new Promise<boolean>((resolve, reject) => {
-      let resolved = false;
-      let checkTimer: any = null;
-      let popup: any = null;
+    // 2. Porta aleatória no loopback
+    const port = await this.getAvailablePort(); // invoke Tauri command
+    const redirectUri = options?.redirectUri || `http://127.0.0.1:${port}/oauth2callback`;
 
-      const cleanup = () => {
-        if (checkTimer) clearInterval(checkTimer);
-        if (typeof window !== 'undefined') {
-          window.removeEventListener('message', handleMessage);
-          window.removeEventListener('storage', handleStorage);
-        }
-      };
-
-      const handleTokenReceived = async (accessToken: string, expiresIn?: number, receivedState?: string) => {
-        if (resolved) return;
-        if (receivedState && receivedState !== state) {
-          cleanup();
-          resolved = true;
-          reject(new Error('[GoogleDriveSyncService] Violação de segurança: Estado CSRF inválido.'));
-          return;
-        }
-
-        cleanup();
-        resolved = true;
-
-        try {
-          if (popup && !popup.closed) {
-            popup.close();
-          }
-        } catch {}
-
-        try {
-          const userEmail = (await this.fetchUserEmail(accessToken)) || options?.email || 'estudante@lumen.app';
-          const saved = await this.saveSecureTokens({
-            accessToken,
-            expiresAt: Date.now() + (expiresIn || 3600) * 1000,
-            userEmail,
-            tokenType: 'Bearer',
-            scope: GDRIVE_CONFIG.ALLOWED_DRIVE_SCOPE,
-          });
-          resolve(saved);
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      const handleMessage = (event: MessageEvent) => {
-        try {
-          if (!event.data) return;
-          if (event.data.type === 'LUMEN_GOOGLE_AUTH_SUCCESS') {
-            const { accessToken, expiresIn, state: receivedState } = event.data;
-            if (accessToken) {
-              handleTokenReceived(accessToken, expiresIn, receivedState);
-            }
-          }
-        } catch {}
-      };
-
-      const handleStorage = (event: StorageEvent) => {
-        try {
-          if (event.key === '__lumen_oauth_callback' && event.newValue) {
-            const data = JSON.parse(event.newValue);
-            if (data && data.accessToken) {
-              handleTokenReceived(data.accessToken, data.expiresIn, data.state);
-            }
-          }
-        } catch {}
-      };
-
-      if (typeof window !== 'undefined') {
-        window.addEventListener('message', handleMessage);
-        window.addEventListener('storage', handleStorage);
-
-        const width = 500;
-        const height = 650;
-        const left = window.screen?.width ? (window.screen.width - width) / 2 : 100;
-        const top = window.screen?.height ? (window.screen.height - height) / 2 : 100;
-
-        try {
-          popup = window.open(
-            authUrl,
-            'lumen_google_auth',
-            `width=${width},height=${height},top=${top},left=${left},status=no,menubar=no,toolbar=no`
-          );
-        } catch (e) {
-          popup = null;
-        }
-
-        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-          // If popup is blocked by browser, open via system Linking
-          Linking.openURL(authUrl).catch(() => {});
-        } else {
-          checkTimer = setInterval(() => {
-            if (popup && popup.closed) {
-              clearInterval(checkTimer);
-              setTimeout(() => {
-                if (!resolved) {
-                  cleanup();
-                  resolved = true;
-                  reject(new Error('Login no Google cancelado ou janela fechada pelo usuário.'));
-                }
-              }, 1000);
-            }
-          }, 500);
-        }
-      } else {
-        Linking.openURL(authUrl).catch(() => {});
-      }
-
-      // Timeout after 3 minutes
-      setTimeout(() => {
-        if (!resolved) {
-          cleanup();
-          resolved = true;
-          reject(new Error('Tempo limite para login no Google expirado (3 minutos).'));
-        }
-      }, 180000);
+    // 3. Construir URL de autorização
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: DRIVE_SCOPES.join(' '),
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      access_type: 'offline',
+      prompt: 'consent',
     });
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+
+    // 4. Abrir browser do sistema via Tauri + aguardar código via Tauri command
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { open } = await import('@tauri-apps/plugin-shell');
+
+    // Iniciar servidor local no Rust e abrir browser
+    await invoke('start_oauth_server', { port });
+    await open(authUrl);
+
+    // 5. Aguardar o code retornar do servidor Rust (polling com timeout 3min)
+    const authCode = await this.waitForOAuthCode(60); // timeout 60s
+    if (!authCode) return null;
+
+    // 6. Trocar code por tokens
+    const tokens = await this.exchangeCodeForTokens(authCode, codeVerifier, redirectUri);
+    if (!tokens) return null;
+
+    await this.saveSecureTokens(tokens.access_token, tokens.refresh_token ?? '');
+    return tokens.access_token;
+  }
+
+  public static generateCodeVerifier(): string {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return btoa(String.fromCharCode(...array))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  public static async generateCodeChallenge(verifier: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  public static async getAvailablePort(): Promise<number> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<number>('get_available_port');
+  }
+
+  public static async waitForOAuthCode(timeoutSeconds: number): Promise<string | null> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const deadline = Date.now() + timeoutSeconds * 1000;
+    while (Date.now() < deadline) {
+      try {
+        const code = await invoke<string | null>('poll_oauth_code');
+        if (code) return code;
+      } catch {
+        // Safe retry if command not registered or server starting
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return null;
+  }
+
+  public static async exchangeCodeForTokens(
+    code: string,
+    codeVerifier: string,
+    redirectUri: string
+  ): Promise<{ access_token: string; refresh_token?: string } | null> {
+    try {
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: this.clientId,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+          code_verifier: codeVerifier,
+        }),
+      });
+      const data = await response.json();
+      if (data.access_token) return data;
+      console.error('[OAuth] Token exchange failed:', data);
+      return null;
+    } catch (e) {
+      console.error('[OAuth] Token exchange error:', e);
+      return null;
+    }
   }
 
   /**
@@ -1438,7 +1458,8 @@ export class GoogleDriveSyncService {
         GDRIVE_CONFIG.DEFAULT_CLIENT_ID;
 
       if (Platform.OS === 'web') {
-        return await this.promptWebOAuth({ clientId: effectiveClientId, email });
+        const token = await this.promptWebOAuth({ clientId: effectiveClientId, email });
+        return !!token;
       }
 
       const redirectUri = AuthSession.makeRedirectUri({
@@ -1566,7 +1587,8 @@ export class GoogleDriveSyncService {
     const clientId = paramsOrEmail?.clientId;
     const email = paramsOrEmail?.email;
     if (Platform.OS === 'web') {
-      return await this.promptWebOAuth(paramsOrEmail);
+      const token = await this.promptWebOAuth(paramsOrEmail);
+      return !!token;
     } else {
       return await this.iniciarLoginGoogle(clientId, email);
     }
@@ -1671,3 +1693,12 @@ export class GoogleDriveSyncService {
     }
   }
 }
+
+// Instance-level prototype aliases for compatibility
+(GoogleDriveSyncService.prototype as any).promptWebOAuth = GoogleDriveSyncService.promptWebOAuth;
+(GoogleDriveSyncService.prototype as any).generateCodeVerifier = GoogleDriveSyncService.generateCodeVerifier;
+(GoogleDriveSyncService.prototype as any).generateCodeChallenge = GoogleDriveSyncService.generateCodeChallenge;
+(GoogleDriveSyncService.prototype as any).getAvailablePort = GoogleDriveSyncService.getAvailablePort;
+(GoogleDriveSyncService.prototype as any).waitForOAuthCode = GoogleDriveSyncService.waitForOAuthCode;
+(GoogleDriveSyncService.prototype as any).exchangeCodeForTokens = GoogleDriveSyncService.exchangeCodeForTokens;
+(GoogleDriveSyncService.prototype as any).saveSecureTokens = GoogleDriveSyncService.saveSecureTokens;
