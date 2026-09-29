@@ -116,7 +116,10 @@ export class GoogleAuthService {
       const result = await signInWithPopup(auth, provider);
       return result.user;
     } catch (error: any) {
-      if (error?.code === 'auth/popup-closed-by-user') {
+      if (
+        error?.code === 'auth/popup-closed-by-user' ||
+        error?.code === 'auth/operation-not-supported-in-this-environment'
+      ) {
         return null;
       }
       console.error('[GoogleAuth Web] Falha ao autenticar com popup:', error);
