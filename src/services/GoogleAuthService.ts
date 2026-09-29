@@ -14,6 +14,7 @@ import {
   onAuthStateChanged,
   User,
 } from 'firebase/auth';
+import { Platform } from 'react-native';
 import { auth } from '../config/firebase';
 
 // maybeCompleteAuthSession must be called at module load for expo-auth-session to work.
@@ -25,7 +26,10 @@ try {
   // Running in Node/test — no-op
 }
 
-
+// ─── Default Credentials Fallback ─────────────────────────────────────────────
+// Public Google OAuth client identifiers (secured via package name + SHA-1 in Google Cloud Console)
+const DEFAULT_ANDROID_CLIENT_ID = '505145390874-dsluagocjfj15rjso9nsbgc282d4nvv8.apps.googleusercontent.com';
+const DEFAULT_WEB_CLIENT_ID     = '505145390874-jr3d95ph621voepch94fslvas08kqevi.apps.googleusercontent.com';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +38,10 @@ export interface GoogleAuthConfig {
   androidClientId?: string;
   /** Client ID for Web / Desktop (from Firebase Console → Web app) */
   webClientId?: string;
+  /** Client ID for iOS */
+  iosClientId?: string;
+  /** Primary Client ID fallback */
+  clientId?: string;
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -62,9 +70,16 @@ export class GoogleAuthService {
 
   /** Config object to pass to expo-auth-session's Google.useAuthRequest hook. */
   static getGoogleAuthConfig(): GoogleAuthConfig {
+    const androidClientId =
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || DEFAULT_ANDROID_CLIENT_ID;
+    const webClientId =
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || DEFAULT_WEB_CLIENT_ID;
+
     return {
-      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-      webClientId:     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      androidClientId,
+      webClientId,
+      iosClientId: webClientId,
+      clientId: Platform.OS === 'android' ? androidClientId : webClientId,
     };
   }
 
@@ -133,7 +148,7 @@ export class GoogleAuthService {
       const codeChallenge = await GoogleAuthService.generateCodeChallenge(codeVerifier);
       const port          = await invoke<number>('get_available_port');
       const redirectUri   = `http://127.0.0.1:${port}/oauth2callback`;
-      const clientId      = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
+      const clientId      = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || DEFAULT_WEB_CLIENT_ID;
 
       const params = new URLSearchParams({
         client_id:             clientId,

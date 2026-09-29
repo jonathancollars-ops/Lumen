@@ -345,7 +345,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
       } else {
         // Mobile: expo-auth-session — response is handled in useEffect above
-        await promptAsync();
+        if (promptAsync) {
+          await promptAsync();
+        } else {
+          Alert.alert('Aviso', 'O serviço de autenticação Google está inicializando. Tente novamente em instantes.');
+        }
       }
     } catch (error: any) {
       Alert.alert('Erro ao Conectar', error?.message || 'Não foi possível conectar com o Google.');

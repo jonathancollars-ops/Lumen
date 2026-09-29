@@ -60,24 +60,23 @@ if (fs.existsSync(buildAndroidWorkflowPath)) {
 }
 
 // -------------------------------------------------------------
-// 2. GitHub Actions: release.yml
+// 2. GitHub Actions: build-windows.yml & Desktop Release
 // -------------------------------------------------------------
-console.log('\n--- 2. Validating .github/workflows/release.yml ---');
-const releaseWorkflowPath = path.join(projectRoot, '.github', 'workflows', 'release.yml');
-assert(fs.existsSync(releaseWorkflowPath), '.github/workflows/release.yml exists');
+console.log('\n--- 2. Validating .github/workflows/build-windows.yml ---');
+const buildWindowsWorkflowPath = path.join(projectRoot, '.github', 'workflows', 'build-windows.yml');
+assert(fs.existsSync(buildWindowsWorkflowPath), '.github/workflows/build-windows.yml exists');
 
-if (fs.existsSync(releaseWorkflowPath)) {
-  const content = fs.readFileSync(releaseWorkflowPath, 'utf8');
-  assert(content.includes('name: Release Android APK'), 'Contains proper release workflow name');
-  assert(content.includes("tags:\n      - 'v*'") || content.includes('tags:') && content.includes('v*'), 'Triggers on tag push (v*)');
+if (fs.existsSync(buildWindowsWorkflowPath)) {
+  const content = fs.readFileSync(buildWindowsWorkflowPath, 'utf8');
+  assert(content.includes('name: Windows CI & Desktop Build'), 'Contains proper Windows workflow name');
+  assert(content.includes("tags:\n      - 'v*'") || (content.includes('tags:') && content.includes('v*')), 'Triggers on tag push (v*)');
   assert(content.includes('workflow_dispatch:'), 'Supports manual release dispatch via workflow_dispatch');
   assert(content.includes('contents: write'), 'Configured with write permissions for GitHub Releases');
   assert(content.includes('actions/checkout@v4'), 'Includes checkout action');
   assert(content.includes('actions/setup-node@v4'), 'Includes Node.js setup');
-  assert(content.includes('actions/setup-java@v4') && content.includes('17'), 'Includes Java 17 setup');
+  assert(content.includes('dtolnay/rust-toolchain@stable'), 'Includes Rust toolchain setup');
   assert(content.includes('npx tsc --noEmit'), 'Runs TypeScript pre-release typecheck');
   assert(content.includes('npm test'), 'Runs pre-release test suite');
-  assert(content.includes('assembleRelease') || content.includes('assembleDebug'), 'Builds APK');
   assert(content.includes('softprops/action-gh-release@v2'), 'Uses softprops/action-gh-release@v2 for publishing release');
   assert(content.includes('sha256sum') && content.includes('SHA256SUMS.txt'), 'Generates SHA256SUMS.txt release asset');
   assert(content.includes('actions/upload-artifact@v4'), 'Includes release assets backup upload');
