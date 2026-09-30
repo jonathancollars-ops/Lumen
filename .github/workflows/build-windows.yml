@@ -37,6 +37,14 @@ jobs:
       GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
 
     steps:
+      - name: Verify Desktop OAuth Configuration Before Publishing
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID)) {
+            throw 'Configure the repository variable GOOGLE_DESKTOP_CLIENT_ID with a Google Desktop app OAuth client before publishing Windows installers.'
+          }
+
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 

@@ -41,7 +41,7 @@ const DEFAULT_WEB_CLIENT_ID     = '505145390874-jr3d95ph621voepch94fslvas08kqevi
 export interface GoogleAuthConfig {
   /** Client ID for Android (from Firebase Console → Android app) */
   androidClientId?: string;
-  /** Client ID for Web / Desktop (from Firebase Console → Web app) */
+  /** Client ID for Web (from Firebase Console → Web app) */
   webClientId?: string;
   /** Client ID for iOS */
   iosClientId?: string;
