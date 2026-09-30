@@ -17,7 +17,8 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - Usa um cliente OAuth específico para desktop, PKCE e validação do estado de cada tentativa. A troca de tokens ocorre em Rust e a conta é autenticada no Firebase para a sincronização existente.
 - Encerra o listener após sucesso, erro ou tempo limite, permitindo uma nova tentativa sem aproveitar respostas antigas.
 - Adiciona testes do fluxo desktop e testes nativos com conexões HTTP reais ao servidor local.
-- O instalador precisa ser gerado com `GOOGLE_DESKTOP_CLIENT_ID` configurado no GitHub. A validação com uma conta Google real depende dessa configuração.
+- Configura o cliente OAuth de desktop no instalador distribuído pelo GitHub. O login com uma conta Google real deve ser confirmado após a instalação.
+- Preserva o fluxo de login Android da 3.7.3, já confirmado em aparelho pelo usuário.
 
 ## [3.7.3] - 2026-09-30
 ### Retorno do Google no Android e diagnóstico no Windows

@@ -78,6 +78,17 @@ jobs:
       - name: 🌐 Build Web Frontend (Expo Export)
         run: npm run build:web
 
+      - name: Verify Desktop OAuth Client in Exported App
+        if: env.EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID != ''
+        shell: pwsh
+        run: |
+          $bundledClient = Get-ChildItem -LiteralPath dist -Recurse -Filter '*.js' -File |
+            Select-String -SimpleMatch -Pattern $env:EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID -Quiet |
+            Where-Object { $_ } | Select-Object -First 1
+          if (-not $bundledClient) {
+            throw 'Desktop OAuth client ID is missing from the exported app.'
+          }
+
       - name: 🧪 Test Native Google OAuth Callback Server
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
