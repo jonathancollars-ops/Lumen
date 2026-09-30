@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.2] - 2026-09-30
+### Diagnóstico do login Google no Android
+- Mostra a etapa atual da conexão e diferencia falhas no retorno do navegador, na validação da resposta do Google e na autenticação no Firebase.
+- Encerra a espera após 90 segundos no navegador e 30 segundos nas etapas de validação e autenticação, com mensagem e código da etapa.
+- Trata explicitamente erros na troca do código de autorização, cancelamentos e sessões de login já abertas. Permite uma nova tentativa sem manter o botão preso em carregamento.
+- Confirma o sucesso do login e mantém o estado da conta atualizado. Os diagnósticos não incluem tokens, senhas ou dados pessoais.
+- Esta versão ajuda a identificar a causa do login que não conclui; não confirma a correção da configuração OAuth do Google.
+
 ## [3.7.1] - 2026-09-30
 ### 🔑 Correção de Autenticação Google no Android & Página de Releases Limpa
 - **Redirecionamento OAuth no Android:** Registro dos esquemas de URI `com.jothacsf.organiza` (minúsculo) e `com.jothacsf.Organiza` no `AndroidManifest.xml` via Config Plugin (`withAppActions`), eliminando o redirecionamento indevido para a busca do Google e capturando o token com sucesso.

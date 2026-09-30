@@ -16,6 +16,9 @@ import {
 } from 'firebase/auth';
 import { Platform } from 'react-native';
 import { auth } from '../config/firebase';
+import {
+  GoogleLoginError, GoogleLoginStage, GoogleOAuthRequest, GoogleOAuthResponse, runGoogleMobileLogin,
+} from './GoogleMobileAuthFlow';
 
 // maybeCompleteAuthSession must be called at module load for expo-auth-session to work.
 // We use a lazy require so Node/test environments (which lack native modules) don't crash.
@@ -102,6 +105,32 @@ export class GoogleAuthService {
       console.error('[GoogleAuth] Falha ao autenticar no Firebase:', error);
       return null;
     }
+  }
+
+  /** Handle each mobile step explicitly, including token exchange failures. */
+  static async signInMobile(
+    request: GoogleOAuthRequest,
+    prompt: () => Promise<GoogleOAuthResponse>,
+    onStage: (stage: GoogleLoginStage) => void,
+  ): Promise<User> {
+    const AuthSession: typeof import('expo-auth-session') = require('expo-auth-session');
+    return runGoogleMobileLogin(request, {
+      prompt,
+      onStage,
+      dismiss: () => AuthSession.dismiss(),
+      exchange: (config) => AuthSession.exchangeCodeAsync({
+        clientId: config.clientId,
+        redirectUri: config.redirectUri,
+        code: config.code,
+        extraParams: { code_verifier: config.codeVerifier! },
+      }, { tokenEndpoint: 'https://oauth2.googleapis.com/token' }),
+      signIn: async ({ idToken, accessToken }) => {
+        if (!auth) throw new GoogleLoginError('firebase', 'firebase_not_configured');
+        const credential = GoogleAuthProvider.credential(idToken ?? null, accessToken ?? null);
+        const result = await signInWithCredential(auth, credential);
+        return result.user;
+      },
+    });
   }
 
   /**

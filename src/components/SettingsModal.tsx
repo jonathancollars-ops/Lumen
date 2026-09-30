@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { getThemeColors, getContrastTextColor } from '../theme';
 import { StorageService } from '../services/storage';
 import { AppUpdateService } from '../services/AppUpdateService';
 import { GoogleAuthService } from '../services/GoogleAuthService';
+import { describeGoogleLoginError, GoogleLoginError, GOOGLE_LOGIN_STAGE_LABELS } from '../services/GoogleMobileAuthFlow';
 import * as Google from 'expo-auth-session/providers/google';
 import { generateId } from '../utils/id';
 import { APP_VERSION } from '../utils/version';
@@ -85,35 +86,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [firebaseUser, setFirebaseUser] = useState(() => GoogleAuthService.getCurrentUser());
   const [isSyncing, setIsSyncing] = useState(false);
   const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+  const [googleLoginStatus, setGoogleLoginStatus] = useState('');
+  const googleLoginAttempt = useRef(0);
+  const googleLoginRunning = useRef(false);
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
   // expo-auth-session Google hook (for Android/iOS)
-  const [request, response, promptAsync] = Google.useAuthRequest(
-    GoogleAuthService.getGoogleAuthConfig()
+  const [request, , promptAsync] = Google.useAuthRequest(
+    { ...GoogleAuthService.getGoogleAuthConfig(), shouldAutoExchangeCode: false }
   );
 
-  // Process OAuth response from expo-auth-session
+  // Discard UI updates from attempts belonging to an unmounted screen.
   React.useEffect(() => {
-    if (response) {
-      if (response.type === 'success') {
-        GoogleAuthService.handleAuthResponse(response).then((user) => {
-          if (user) {
-            setFirebaseUser(user);
-          } else {
-            Alert.alert('Erro', 'Não foi possível autenticar com o Google no Firebase.');
-          }
-        });
-      } else if (response.type === 'error') {
-        Alert.alert(
-          'Erro de Autenticação',
-          (response as any).error?.message || 'Falha ao autenticar com o Google.'
-        );
-      } else if (response.type === 'cancel' || response.type === 'dismiss') {
-        console.log('[GoogleAuth] Autenticação cancelada ou dispensada pelo usuário.');
-      }
-    }
-  }, [response]);
+    const unsubscribe = GoogleAuthService.onAuthChange((user) => {
+      setFirebaseUser(user);
+      if (user) setGoogleLoginStatus('Conta conectada.');
+      else if (!googleLoginRunning.current) setGoogleLoginStatus('');
+    });
+    return () => { googleLoginAttempt.current++; unsubscribe(); };
+  }, []);
 
   // Stay in sync with Firebase auth state
   React.useEffect(() => {
@@ -334,8 +326,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleConnectGoogle = async () => {
+    if (googleLoginRunning.current) return;
+    googleLoginRunning.current = true;
+    const attempt = ++googleLoginAttempt.current;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsConnectingCloud(true);
+    setGoogleLoginStatus(Platform.OS === 'web' ? '' : 'Aguardando retorno do Google…');
     try {
       if (isTauri) {
         // Desktop: PKCE loopback flow
@@ -356,17 +352,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           Alert.alert('Conta Conectada!', `Bem-vindo, ${user.displayName ?? user.email}! Seu backup está sendo sincronizado.`);
         }
       } else {
-        // Mobile: expo-auth-session — response is handled in useEffect above
-        if (promptAsync) {
-          await promptAsync();
-        } else {
-          Alert.alert('Aviso', 'O serviço de autenticação Google está inicializando. Tente novamente em instantes.');
+        if (!request) throw new GoogleLoginError('browser', 'request_not_ready');
+        const user = await GoogleAuthService.signInMobile(request, () => promptAsync(), (stage) => {
+          if (googleLoginAttempt.current === attempt) {
+            setGoogleLoginStatus(stage === 'browser' ? 'Aguardando retorno do Google…'
+              : `${GOOGLE_LOGIN_STAGE_LABELS[stage]}…`);
+          }
+        });
+        if (googleLoginAttempt.current === attempt) {
+          setFirebaseUser(user);
+          setGoogleLoginStatus('Conta conectada.');
+          Alert.alert('Conta conectada', 'Login concluído. A sincronização dos dados será iniciada.');
         }
       }
     } catch (error: any) {
-      Alert.alert('Erro ao Conectar', error?.message || 'Não foi possível conectar com o Google.');
+      if (googleLoginAttempt.current === attempt) {
+        const message = Platform.OS === 'web' ? 'Não foi possível conectar com o Google. Tente novamente.'
+          : describeGoogleLoginError(error);
+        setGoogleLoginStatus(message);
+        Alert.alert(`Conexão não concluída — Lumen ${APP_VERSION}`, message);
+      }
     } finally {
-      setIsConnectingCloud(false);
+      googleLoginRunning.current = false;
+      if (googleLoginAttempt.current === attempt) setIsConnectingCloud(false);
     }
   };
 
@@ -937,6 +945,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </>
                           )}
                         </TouchableOpacity>
+                        {googleLoginStatus ? (
+                          <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary, fontSize: 13, marginTop: 12, textAlign: 'center' }}>
+                            {googleLoginStatus}
+                          </Text>
+                        ) : null}
                       </View>
                     </>
                   )}
