@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.4] - 2026-09-30
+### Login Google nativo no Windows
+- Implementa e registra o servidor local de retorno da autenticação no aplicativo Windows e a abertura do navegador padrão pelo componente nativo.
+- Usa um cliente OAuth específico para desktop, PKCE e validação do estado de cada tentativa. A troca de tokens ocorre em Rust e a conta é autenticada no Firebase para a sincronização existente.
+- Encerra o listener após sucesso, erro ou tempo limite, permitindo uma nova tentativa sem aproveitar respostas antigas.
+- Adiciona testes do fluxo desktop e testes nativos com conexões HTTP reais ao servidor local.
+- O instalador precisa ser gerado com `GOOGLE_DESKTOP_CLIENT_ID` configurado no GitHub. A validação com uma conta Google real depende dessa configuração.
+
 ## [3.7.3] - 2026-09-30
 ### Retorno do Google no Android e diagnóstico no Windows
 - Captura o endereço de retorno do Google antes de abrir o navegador e aguarda brevemente o deep link quando o Android sinaliza retorno ao app antes de entregar a resposta da autenticação.

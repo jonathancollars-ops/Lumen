@@ -17,9 +17,10 @@ import {
 import { Linking, Platform } from 'react-native';
 import { auth } from '../config/firebase';
 import {
-  GoogleLoginError, GoogleLoginStage, GoogleOAuthRequest, GoogleOAuthResponse, runGoogleMobileLogin, runGoogleLoginStage,
+  GoogleLoginError, GoogleLoginStage, GoogleOAuthRequest, GoogleOAuthResponse, runGoogleMobileLogin,
 } from './GoogleMobileAuthFlow';
 import { captureGoogleAndroidBrowserReturn } from './GoogleAndroidBrowserReturn';
+import { DesktopOAuthReply, runGoogleDesktopLogin } from './GoogleDesktopAuthFlow';
 
 // maybeCompleteAuthSession must be called at module load for expo-auth-session to work.
 // We use a lazy require so Node/test environments (which lack native modules) don't crash.
@@ -187,99 +188,48 @@ export class GoogleAuthService {
       typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
     if (!isTauri) return null;
 
-    let stage: GoogleLoginStage = 'desktop';
-    onStage?.(stage);
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const { open }   = await import('@tauri-apps/plugin-shell');
-
-      const codeVerifier  = GoogleAuthService.generateCodeVerifier();
-      const codeChallenge = await GoogleAuthService.generateCodeChallenge(codeVerifier);
-      const port          = await GoogleAuthService.invokeDesktopCommand<number>(invoke, 'get_available_port');
-      const redirectUri   = `http://127.0.0.1:${port}/oauth2callback`;
-      const clientId      = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || DEFAULT_WEB_CLIENT_ID;
-
-      const params = new URLSearchParams({
-        client_id:             clientId,
-        redirect_uri:          redirectUri,
-        response_type:         'code',
-        scope:                 'openid email profile',
-        code_challenge:        codeChallenge,
-        code_challenge_method: 'S256',
-        access_type:           'offline',
-        prompt:                'consent',
+      const native = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+        try { return await invoke<T>(command, args); }
+        catch (error) {
+          if (typeof error === 'string' && /command.*not found/i.test(error)) {
+            throw new GoogleLoginError('desktop', 'desktop_command_unavailable');
+          }
+          throw error;
+        }
+      };
+      const codeVerifier = GoogleAuthService.generateCodeVerifier();
+      const user = await runGoogleDesktopLogin({
+        clientId: process.env.EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID ?? '',
+        state: GoogleAuthService.generateCodeVerifier(),
+        codeVerifier,
+        codeChallenge: await GoogleAuthService.generateCodeChallenge(codeVerifier),
+      }, {
+        onStage,
+        start: state => native<{ port: number }>('start_google_oauth', { state }),
+        open: config => native<void>('open_google_oauth', config),
+        poll: state => native<DesktopOAuthReply | null>('poll_google_oauth', { state }),
+        stop: state => native<void>('stop_google_oauth', { state }),
+        exchange: config => native('exchange_google_oauth', config),
+        signIn: async ({ idToken, accessToken }) => {
+          if (!auth) throw new GoogleLoginError('firebase', 'firebase_not_configured');
+          // Desktop OAuth has its own audience. Firebase also supports a Google access token.
+          const credential = GoogleAuthProvider.credential(accessToken ? null : idToken ?? null, accessToken ?? null);
+          return (await signInWithCredential(auth, credential)).user;
+        },
       });
-
-      await GoogleAuthService.invokeDesktopCommand(invoke, 'start_oauth_server', { port });
-      stage = 'opening';
-      onStage?.(stage);
-      await runGoogleLoginStage(stage, () => open(`https://accounts.google.com/o/oauth2/v2/auth?${params}`), 30_000);
-
-      stage = 'browser';
-      onStage?.(stage);
-      const authCode = await GoogleAuthService.waitForCode(invoke, 90);
-      if (!authCode) {
-        throw new GoogleLoginError(stage, 'timeout');
-      }
-
-      // Exchange code for tokens
-      stage = 'tokens';
-      onStage?.(stage);
-      const tokens = await runGoogleLoginStage(stage, async () => {
-        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body:    new URLSearchParams({
-            code:          authCode,
-            client_id:     clientId,
-            redirect_uri:  redirectUri,
-            grant_type:    'authorization_code',
-            code_verifier: codeVerifier,
-          }),
-        });
-        const tokenBody = await tokenRes.json();
-        if (tokenBody.error) throw { code: tokenBody.error };
-        return tokenBody;
-      }, 30_000);
-      if (!tokens.id_token) {
-        throw new GoogleLoginError(stage, 'missing_tokens');
-      }
-
-      // Sign into Firebase
-      stage = 'firebase';
-      onStage?.(stage);
-      return await runGoogleLoginStage(stage, async () => {
-        if (!auth) throw new GoogleLoginError('firebase', 'firebase_not_configured');
-        const credential = GoogleAuthProvider.credential(tokens.id_token);
-        const result = await signInWithCredential(auth, credential);
-        return result.user;
-      }, 30_000);
+      void native<void>('focus_lumen_window').catch(() => {});
+      return user;
     } catch (error) {
       if (error instanceof GoogleLoginError) {
         throw error;
       }
-      throw new GoogleLoginError(stage, `${stage}_failed`);
+      throw new GoogleLoginError('desktop', 'desktop_failed');
     }
   }
 
   // ─── PKCE helpers (used by signInDesktop) ──────────────────────────────
-
-  private static invokeDesktopCommand<T>(
-    invoke: <R>(command: string, args?: Record<string, unknown>) => Promise<R>,
-    command: string,
-    args?: Record<string, unknown>,
-  ): Promise<T> {
-    return runGoogleLoginStage('desktop', async () => {
-      try {
-        return await invoke<T>(command, args);
-      } catch (error) {
-        if (typeof error === 'string' && /command.*not found/i.test(error)) {
-          throw new GoogleLoginError('desktop', 'desktop_command_unavailable');
-        }
-        throw error;
-      }
-    }, 30_000);
-  }
 
   private static generateCodeVerifier(): string {
     const array = new Uint8Array(32);
@@ -295,17 +245,4 @@ export class GoogleAuthService {
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   }
 
-  private static async waitForCode(
-    invoke: (cmd: string, args?: any) => Promise<any>,
-    timeoutSec: number,
-  ): Promise<string | null> {
-    const deadline = Date.now() + timeoutSec * 1000;
-    while (Date.now() < deadline) {
-      const code = await runGoogleLoginStage('browser', () => invoke('poll_oauth_code'),
-        Math.max(1, deadline - Date.now()));
-      if (code) return code as string;
-      await new Promise(r => setTimeout(r, 500));
-    }
-    return null;
-  }
 }

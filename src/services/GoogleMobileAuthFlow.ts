@@ -117,6 +117,8 @@ export function describeGoogleLoginError(error: unknown): string {
         ? 'Ainda existe uma tentativa de login aberta. Feche a aba anterior antes de tentar novamente.'
         : error.code === 'desktop_command_unavailable'
           ? 'O instalador não disponibilizou o serviço necessário para iniciar o login. A integração do aplicativo Windows precisa ser corrigida.'
-          : 'A conexão não foi concluída. Os detalhes abaixo identificam a etapa que falhou.';
+          : error.code === 'desktop_client_not_configured'
+            ? 'Falta configurar o cliente Google do tipo App para computador nesta versão do Lumen.'
+            : 'A conexão não foi concluída. Os detalhes abaixo identificam a etapa que falhou.';
   return `${explanation}\n\n${error.message}`;
 }

@@ -87,16 +87,16 @@ async function runKeystoreTransitionAndSemverTests() {
   });
 
   // Test 2: Project-wide version consistency
-  await test('2. Version 3.7.3 consistency across package.json, app.json and version.ts', () => {
+  await test('2. Version 3.7.4 consistency across package.json, app.json and version.ts', () => {
     const pkgPath = path.join(projectRoot, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    assert(pkg.version === '3.7.3', `package.json version is 3.7.3 (got ${pkg.version})`);
+    assert(pkg.version === '3.7.4', `package.json version is 3.7.4 (got ${pkg.version})`);
 
     const appJsonPath = path.join(projectRoot, 'app.json');
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
-    assert(appJson.expo.version === '3.7.3', `app.json expo.version is 3.7.3 (got ${appJson.expo.version})`);
+    assert(appJson.expo.version === '3.7.4', `app.json expo.version is 3.7.4 (got ${appJson.expo.version})`);
 
-    assert(APP_VERSION === '3.7.3', `src/utils/version.ts APP_VERSION is 3.7.3 (got ${APP_VERSION})`);
+    assert(APP_VERSION === '3.7.4', `src/utils/version.ts APP_VERSION is 3.7.4 (got ${APP_VERSION})`);
   });
 
 

@@ -94,7 +94,9 @@ async function runTestSuite() {
   await test('T8: missing native Windows command reaches the UI with a visible diagnostic', async () => {
     const internals = (globalThis as any).window.__TAURI_INTERNALS__;
     const originalInvoke = internals.invoke;
-    internals.invoke = async () => { throw 'Command get_available_port not found'; };
+    const previousClient = process.env.EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID;
+    process.env.EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID = 'test-desktop.apps.googleusercontent.com';
+    internals.invoke = async () => { throw 'Command start_google_oauth not found'; };
     try {
       const stages: string[] = [];
       await assert.rejects(GoogleAuthService.signInDesktop(stage => stages.push(stage)), error => {
@@ -107,6 +109,8 @@ async function runTestSuite() {
       assert.deepEqual(stages, ['desktop']);
     } finally {
       internals.invoke = originalInvoke;
+      if (previousClient === undefined) delete process.env.EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID;
+      else process.env.EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID = previousClient;
     }
   });
 
