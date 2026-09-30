@@ -1,4 +1,4 @@
-# Configuração Firebase — Lumen v3.7.0
+# Configuração Firebase — Lumen
 
 ## 1. Criar projeto Firebase
 1. Acesse https://console.firebase.google.com
@@ -48,7 +48,7 @@ EXPO_PUBLIC_FIREBASE_APP_ID=1:123456789:web:abc123
 ## 6. Obter os Client IDs do Google OAuth
 
 Ainda em **Configurações → Geral**:
-- Para Android: clique em **"Adicionar app"** → Android → preencha `com.lumen.app`
+- Para Android: clique em **"Adicionar app"** → Android → preencha `com.jothacsf.Organiza` (o pacote definido em `app.json`).
   - Copie o **Android Client ID** → `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
 - O **Web Client ID** já aparece na aba Authentication → Google → expandir → "ID do cliente Web"
   - Copie → `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
@@ -86,6 +86,21 @@ Se ocorrer `auth/invalid-credential` na etapa **Autenticação no Firebase**, co
 Referência: [Firebase: permitir clientes de projetos externos](https://support.google.com/firebase/answer/6401008?hl=pt-BR).
 
 ## 8. Verificar
+
+### Sincronizar a rotina entre Android e Windows (3.7.6)
+
+1. Atualize os dois aplicativos antes de editar a rotina. Instale as atualizações sobre a instalação existente para preservar os dados locais.
+2. Abra primeiro o Android, que contém a rotina, e conecte a conta Google. Em **Configurações → Backup & Nuvem**, aguarde a mensagem **Dados sincronizados**.
+3. Abra o Windows e conecte a mesma conta Google. Os dois builds devem usar o mesmo projeto Firebase. A rotina é identificada pelo UID do Firebase e armazenada em `users/{uid}/backup/latest`.
+4. As alterações salvas são enviadas automaticamente; o outro aplicativo recebe as mudanças enquanto está aberto, ou na próxima abertura. **Sincronizar Agora** executa o envio e o recebimento imediatamente.
+
+O motor mescla coleções por ID e campos alterados em transações. Após a primeira conexão, usa uma referência local persistida por conta para distinguir alterações locais, remotas e exclusões. Em conflitos no mesmo campo, a alteração local que chega na transação vence. Na primeira conexão, registros locais exclusivos são preservados e duplicatas existentes na nuvem têm prioridade. Exclusões registradas na nuvem não são recriadas por dados antigos de um dispositivo que está conectando pela primeira vez.
+
+Eventos, matérias, faltas, tarefas, sessões de estudo, semestres, AACC, projetos, histórico/CR, configurações e progresso são sincronizados. Credenciais de IA e o temporizador em andamento permanecem no dispositivo. Backups antigos do Firebase são convertidos para o formato validado antes de aplicar dados.
+
+Sem internet, as alterações ficam no armazenamento local e são comparadas novamente com a referência ao reconectar. Falhas de leitura não são transformadas em listas vazias. A interface mostra erros de acesso/rede; `permission-denied` exige conferir as regras do Firestore da seção 4, sem tornar os dados públicos.
+
+Os testes de `test/cloud_sync.test.ts` simulam dois dispositivos, migração de backup, edições concorrentes, exclusões, alterações durante envio, perda de conexão e logout. A confirmação com dados reais deve ser feita nos dois aplicativos instalados.
 
 Após configurar o `.env`, rode:
 ```bash
