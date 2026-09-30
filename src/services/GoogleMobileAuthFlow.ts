@@ -1,7 +1,9 @@
-/** Mobile OAuth orchestration. Never include credentials in diagnostic messages. */
-export type GoogleLoginStage = 'browser' | 'tokens' | 'firebase';
+/** OAuth orchestration. Never include credentials in diagnostic messages. */
+export type GoogleLoginStage = 'desktop' | 'opening' | 'browser' | 'tokens' | 'firebase';
 
 export const GOOGLE_LOGIN_STAGE_LABELS: Record<GoogleLoginStage, string> = {
+  desktop: 'Preparação do login no Windows',
+  opening: 'Abertura do navegador',
   browser: 'Retorno do Google',
   tokens: 'Validação da resposta do Google',
   firebase: 'Autenticação no Firebase',
@@ -48,7 +50,7 @@ function safeErrorCode(error: unknown, fallback: string): string {
     ? code : fallback;
 }
 
-async function runStage<T>(
+export async function runGoogleLoginStage<T>(
   stage: GoogleLoginStage,
   operation: () => Promise<T>,
   timeoutMs: number,
@@ -78,7 +80,7 @@ export async function runGoogleMobileLogin<T>(
   deps: GoogleMobileAuthDependencies<T>,
 ): Promise<T> {
   deps.onStage?.('browser');
-  const response = await runStage('browser', deps.prompt, deps.timeouts?.browser ?? 90_000, deps.dismiss);
+  const response = await runGoogleLoginStage('browser', deps.prompt, deps.timeouts?.browser ?? 90_000, deps.dismiss);
   if (response.type === 'cancel' || response.type === 'dismiss') {
     throw new GoogleLoginError('browser', response.type);
   }
@@ -92,13 +94,13 @@ export async function runGoogleMobileLogin<T>(
   let tokens: GoogleLoginTokens = { idToken: params.id_token, accessToken: params.access_token };
   if (!tokens.idToken && !tokens.accessToken && params.code) {
     if (!request.codeVerifier) throw new GoogleLoginError('tokens', 'missing_pkce_verifier');
-    tokens = await runStage('tokens', () => deps.exchange({ ...request, code: params.code }),
+    tokens = await runGoogleLoginStage('tokens', () => deps.exchange({ ...request, code: params.code }),
       deps.timeouts?.tokens ?? 30_000);
   }
   if (!tokens.idToken && !tokens.accessToken) throw new GoogleLoginError('tokens', 'missing_tokens');
 
   deps.onStage?.('firebase');
-  return runStage('firebase', () => deps.signIn(tokens), deps.timeouts?.firebase ?? 30_000);
+  return runGoogleLoginStage('firebase', () => deps.signIn(tokens), deps.timeouts?.firebase ?? 30_000);
 }
 
 export function describeGoogleLoginError(error: unknown): string {
@@ -107,10 +109,14 @@ export function describeGoogleLoginError(error: unknown): string {
     ? error.stage === 'browser'
       ? 'O Google não devolveu o resultado ao aplicativo em 90 segundos. Feche a aba de login antes de tentar novamente.'
       : 'A conexão demorou mais de 30 segundos e a espera foi encerrada. Verifique sua internet.'
-    : error.code === 'cancel' || error.code === 'dismiss'
-      ? 'A aba de login foi fechada sem concluir a conexão.'
+    : error.code === 'dismiss'
+      ? 'O aplicativo voltou do navegador sem receber a resposta do Google. Isso também pode acontecer quando o retorno automático falha.'
+      : error.code === 'cancel'
+        ? 'A conexão foi cancelada antes de concluir o login.'
       : error.code === 'session_locked'
         ? 'Ainda existe uma tentativa de login aberta. Feche a aba anterior antes de tentar novamente.'
-        : 'A conexão não foi concluída. Os detalhes abaixo identificam a etapa que falhou.';
+        : error.code === 'desktop_command_unavailable'
+          ? 'O instalador não disponibilizou o serviço necessário para iniciar o login. A integração do aplicativo Windows precisa ser corrigida.'
+          : 'A conexão não foi concluída. Os detalhes abaixo identificam a etapa que falhou.';
   return `${explanation}\n\n${error.message}`;
 }

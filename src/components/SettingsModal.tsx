@@ -20,7 +20,7 @@ import { getThemeColors, getContrastTextColor } from '../theme';
 import { StorageService } from '../services/storage';
 import { AppUpdateService } from '../services/AppUpdateService';
 import { GoogleAuthService } from '../services/GoogleAuthService';
-import { describeGoogleLoginError, GoogleLoginError, GOOGLE_LOGIN_STAGE_LABELS } from '../services/GoogleMobileAuthFlow';
+import { describeGoogleLoginError, GoogleLoginError, GoogleLoginStage, GOOGLE_LOGIN_STAGE_LABELS } from '../services/GoogleMobileAuthFlow';
 import * as Google from 'expo-auth-session/providers/google';
 import { generateId } from '../utils/id';
 import { APP_VERSION } from '../utils/version';
@@ -329,18 +329,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (googleLoginRunning.current) return;
     googleLoginRunning.current = true;
     const attempt = ++googleLoginAttempt.current;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsConnectingCloud(true);
-    setGoogleLoginStatus(Platform.OS === 'web' ? '' : 'Aguardando retorno do Google…');
+    setGoogleLoginStatus(isTauri ? 'Preparando o login no Windows…' : 'Aguardando retorno do Google…');
+    const onStage = (stage: GoogleLoginStage) => {
+      if (googleLoginAttempt.current === attempt) setGoogleLoginStatus(`${GOOGLE_LOGIN_STAGE_LABELS[stage]}…`);
+    };
     try {
+      if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       if (isTauri) {
         // Desktop: PKCE loopback flow
-        const user = await GoogleAuthService.signInDesktop();
+        const user = await GoogleAuthService.signInDesktop(onStage);
         if (user) {
           setFirebaseUser(user);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           Alert.alert('Conta Conectada!', `Bem-vindo, ${user.displayName ?? user.email}! Seu backup está sendo sincronizado.`);
         } else {
+          setGoogleLoginStatus('Não foi possível iniciar o login no Windows.');
           Alert.alert('Erro', 'Não foi possível conectar com o Google. Tente novamente.');
         }
       } else if (Platform.OS === 'web') {
@@ -350,15 +354,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           setFirebaseUser(user);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           Alert.alert('Conta Conectada!', `Bem-vindo, ${user.displayName ?? user.email}! Seu backup está sendo sincronizado.`);
-        }
+        } else setGoogleLoginStatus('A conexão não foi concluída. A janela de login pode ter sido fechada.');
       } else {
         if (!request) throw new GoogleLoginError('browser', 'request_not_ready');
-        const user = await GoogleAuthService.signInMobile(request, () => promptAsync(), (stage) => {
-          if (googleLoginAttempt.current === attempt) {
-            setGoogleLoginStatus(stage === 'browser' ? 'Aguardando retorno do Google…'
-              : `${GOOGLE_LOGIN_STAGE_LABELS[stage]}…`);
-          }
-        });
+        const user = await GoogleAuthService.signInMobile(request, () => promptAsync(), onStage);
         if (googleLoginAttempt.current === attempt) {
           setFirebaseUser(user);
           setGoogleLoginStatus('Conta conectada.');
@@ -367,8 +366,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     } catch (error: any) {
       if (googleLoginAttempt.current === attempt) {
-        const message = Platform.OS === 'web' ? 'Não foi possível conectar com o Google. Tente novamente.'
-          : describeGoogleLoginError(error);
+        const message = describeGoogleLoginError(error);
         setGoogleLoginStatus(message);
         Alert.alert(`Conexão não concluída — Lumen ${APP_VERSION}`, message);
       }

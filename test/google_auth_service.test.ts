@@ -8,6 +8,7 @@
 import './setup_env';
 import assert from 'node:assert/strict';
 import { GoogleAuthService } from '../src/services/GoogleAuthService';
+import { describeGoogleLoginError, GoogleLoginError } from '../src/services/GoogleMobileAuthFlow';
 
 let total = 0;
 let passed = 0;
@@ -88,6 +89,25 @@ async function runTestSuite() {
   await test('T7: signInWeb() existe e lida de forma segura quando auth não está instanciado', async () => {
     const res = await GoogleAuthService.signInWeb();
     assert.equal(res, null);
+  });
+
+  await test('T8: missing native Windows command reaches the UI with a visible diagnostic', async () => {
+    const internals = (globalThis as any).window.__TAURI_INTERNALS__;
+    const originalInvoke = internals.invoke;
+    internals.invoke = async () => { throw 'Command get_available_port not found'; };
+    try {
+      const stages: string[] = [];
+      await assert.rejects(GoogleAuthService.signInDesktop(stage => stages.push(stage)), error => {
+        assert.ok(error instanceof GoogleLoginError);
+        assert.equal(error.stage, 'desktop');
+        assert.equal(error.code, 'desktop_command_unavailable');
+        assert.match(describeGoogleLoginError(error), /Windows/);
+        return true;
+      });
+      assert.deepEqual(stages, ['desktop']);
+    } finally {
+      internals.invoke = originalInvoke;
+    }
   });
 
 

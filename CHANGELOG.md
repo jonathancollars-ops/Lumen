@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.3] - 2026-09-30
+### Retorno do Google no Android e diagnóstico no Windows
+- Captura o endereço de retorno do Google antes de abrir o navegador e aguarda brevemente o deep link quando o Android sinaliza retorno ao app antes de entregar a resposta da autenticação.
+- Compara o esquema do endereço sem diferenciar maiúsculas e minúsculas, mantendo a validação do caminho e do estado OAuth pela requisição original.
+- Diferencia retorno sem resposta de cancelamento manual e remove os listeners após sucesso, falha ou tempo limite.
+- Mostra a etapa e o código de falha diretamente na tela do Windows, inclusive quando os comandos nativos necessários ao login estão indisponíveis. O login nativo do Windows ainda depende da implementação desses comandos e da configuração OAuth adequada.
+- O ajuste do retorno Android foi validado em testes automatizados; a confirmação de login em um aparelho real continua pendente.
+
 ## [3.7.2] - 2026-09-30
 ### Diagnóstico do login Google no Android
 - Mostra a etapa atual da conexão e diferencia falhas no retorno do navegador, na validação da resposta do Google e na autenticação no Firebase.

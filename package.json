@@ -1,6 +1,6 @@
 {
   "name": "lumen",
-  "version": "3.7.2",
+  "version": "3.7.3",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
