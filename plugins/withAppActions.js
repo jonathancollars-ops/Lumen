@@ -58,6 +58,36 @@ function withAppActions(config) {
       });
     }
 
+    if (!mainActivity['intent-filter']) {
+      mainActivity['intent-filter'] = [];
+    }
+
+    const oauthSchemes = [
+      'lumen',
+      'com.jothacsf.organiza',
+      'com.jothacsf.Organiza',
+      'com.googleusercontent.apps.505145390874-dsluagocjfj15rjso9nsbgc282d4nvv8',
+    ];
+
+    oauthSchemes.forEach((scheme) => {
+      const exists = mainActivity['intent-filter'].some(
+        filter =>
+          filter.action?.some(a => a.$ && a.$['android:name'] === 'android.intent.action.VIEW') &&
+          filter.data?.some(d => d.$ && d.$['android:scheme'] === scheme)
+      );
+
+      if (!exists) {
+        mainActivity['intent-filter'].push({
+          action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
+          category: [
+            { $: { 'android:name': 'android.intent.category.DEFAULT' } },
+            { $: { 'android:name': 'android.intent.category.BROWSABLE' } },
+          ],
+          data: [{ $: { 'android:scheme': scheme } }],
+        });
+      }
+    });
+
     return config;
   });
 

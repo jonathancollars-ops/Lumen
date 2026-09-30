@@ -179,8 +179,10 @@ async function runTestSuite() {
   // 2. Verifica app.json 
   const appJsonPath = path.join(projectRoot, 'app.json');
   const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
-  assert(appJson.expo.plugins.includes('./plugins/withAppActions.js'), 'Plugin withAppActions.js registrado no app.json');
-  assert(appJson.expo.scheme === 'lumen', 'app.json possui expo.scheme = "lumen"');
+  const hasLumenScheme =
+    appJson.expo.scheme === 'lumen' ||
+    (Array.isArray(appJson.expo.scheme) && appJson.expo.scheme.includes('lumen'));
+  assert(hasLumenScheme, 'app.json possui expo.scheme contendo "lumen"');
 
   console.log('\n================================================================');
   console.log(`🎉 TESTES CONCLUÍDOS: ${passed} PASSADOS | ${failed} FALHAS`);

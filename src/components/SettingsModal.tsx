@@ -96,10 +96,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Process OAuth response from expo-auth-session
   React.useEffect(() => {
     if (response) {
-      GoogleAuthService.handleAuthResponse(response).then((user) => {
-        if (user) setFirebaseUser(user);
-        else Alert.alert('Erro', 'Não foi possível autenticar com o Google.');
-      });
+      if (response.type === 'success') {
+        GoogleAuthService.handleAuthResponse(response).then((user) => {
+          if (user) {
+            setFirebaseUser(user);
+          } else {
+            Alert.alert('Erro', 'Não foi possível autenticar com o Google no Firebase.');
+          }
+        });
+      } else if (response.type === 'error') {
+        Alert.alert(
+          'Erro de Autenticação',
+          (response as any).error?.message || 'Falha ao autenticar com o Google.'
+        );
+      } else if (response.type === 'cancel' || response.type === 'dismiss') {
+        console.log('[GoogleAuth] Autenticação cancelada ou dispensada pelo usuário.');
+      }
     }
   }, [response]);
 

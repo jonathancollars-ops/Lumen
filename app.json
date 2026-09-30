@@ -5,7 +5,12 @@
     "version": "3.7.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "lumen",
+    "scheme": [
+      "lumen",
+      "com.jothacsf.organiza",
+      "com.jothacsf.Organiza",
+      "com.googleusercontent.apps.505145390874-dsluagocjfj15rjso9nsbgc282d4nvv8"
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -31,6 +36,9 @@
           "data": [
             {
               "scheme": "lumen"
+            },
+            {
+              "scheme": "com.jothacsf.organiza"
             },
             {
               "scheme": "com.jothacsf.Organiza"
