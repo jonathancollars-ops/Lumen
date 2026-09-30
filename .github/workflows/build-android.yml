@@ -129,16 +129,22 @@ jobs:
         id: prepare-artifact
         run: |
           mkdir -p build-output
+          APP_VER=$(node -p "require('./package.json').version")
+          echo "app_version=$APP_VER" >> $GITHUB_OUTPUT
+
+          # Extract version-specific release notes (clean summary without past versions)
+          node scripts/extract_release_notes.js "$APP_VER" build-output/RELEASE_NOTES.md
+
           # Locate generated APK across android outputs
           APK_FILE=$(find android -name "*.apk" ! -name "*unaligned*" | head -n 1)
           if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
-            TARGET_APK="build-output/lumen-v3.7.0-standalone.apk"
+            TARGET_APK="build-output/lumen-v${APP_VER}-standalone.apk"
             cp "$APK_FILE" "$TARGET_APK"
             echo "apk_path=$TARGET_APK" >> $GITHUB_OUTPUT
             
             # Generate SHA-256 Checksum
             cd build-output
-            sha256sum lumen-v3.7.0-standalone.apk > SHA256SUMS.txt
+            sha256sum "lumen-v${APP_VER}-standalone.apk" > SHA256SUMS.txt
             echo "APK generated successfully: $TARGET_APK"
             cat SHA256SUMS.txt
             cd ..
@@ -151,9 +157,9 @@ jobs:
       - name: 📤 Upload Standalone APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lumen-v3.7.0-android-apk
+          name: lumen-v${{ steps.prepare-artifact.outputs.app_version }}-android-apk
           path: |
-            build-output/lumen-v3.7.0-standalone.apk
+            build-output/lumen-v*-standalone.apk
             build-output/SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
@@ -170,12 +176,12 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.7.0-build-${{ github.run_number }}
-          name: Lumen Acadêmico v3.7.0 (Build #${{ github.run_number }})
+          tag_name: v${{ steps.prepare-artifact.outputs.app_version }}-build-${{ github.run_number }}
+          name: Lumen Acadêmico v${{ steps.prepare-artifact.outputs.app_version }} (Build #${{ github.run_number }})
           files: |
-            build-output/lumen-v3.7.0-standalone.apk
+            build-output/lumen-v*-standalone.apk
             build-output/SHA256SUMS.txt
-          body_path: CHANGELOG.md
+          body_path: build-output/RELEASE_NOTES.md
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -187,9 +193,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Lumen Acadêmico ${{ github.ref_name }}
           files: |
-            build-output/lumen-v3.7.0-standalone.apk
+            build-output/lumen-v*-standalone.apk
             build-output/SHA256SUMS.txt
-          body_path: CHANGELOG.md
+          body_path: build-output/RELEASE_NOTES.md
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -197,12 +203,12 @@ jobs:
       - name: 📝 Output GitHub Actions Job Summary
         if: always()
         run: |
-          echo "### 🚀 Lumen 3.7.0 Android CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Lumen ${{ steps.prepare-artifact.outputs.app_version }} Android CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ job.status == 'success' && '✅ SUCCESS' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact**: \`lumen-v3.7.0-android-apk\` (Standalone APK & SHA256SUMS.txt)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: \`lumen-v${{ steps.prepare-artifact.outputs.app_version }}-android-apk\` (Standalone APK & SHA256SUMS.txt)" >> $GITHUB_STEP_SUMMARY
           echo "- **Typecheck**: \`npx tsc --noEmit\` (0 errors)" >> $GITHUB_STEP_SUMMARY
           echo "- **Tests**: \`npm test\` (100% green)" >> $GITHUB_STEP_SUMMARY
           if [ -f gradle_build.log ]; then

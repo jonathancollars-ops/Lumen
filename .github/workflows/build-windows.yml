@@ -78,6 +78,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p build-windows-output
+          APP_VER=$(node -p "require('./package.json').version")
+          echo "app_version=$APP_VER" >> $GITHUB_OUTPUT
+
+          # Extract version-specific release notes (clean summary without past versions)
+          node scripts/extract_release_notes.js "$APP_VER" build-windows-output/RELEASE_NOTES.md
+
           echo "🔍 Searching for generated Windows bundles (.exe / .msi)..."
           
           # Copy NSIS setup and WiX MSI installers from target release bundle
@@ -87,7 +93,7 @@ jobs:
 
           # Also include standalone portable executable if generated
           if [ -f "src-tauri/target/release/lumen.exe" ]; then
-            cp -v "src-tauri/target/release/lumen.exe" build-windows-output/lumen-v3.7.0-portable.exe
+            cp -v "src-tauri/target/release/lumen.exe" "build-windows-output/lumen-v${APP_VER}-portable.exe"
           fi
 
           # Verify that artifacts were collected
@@ -111,7 +117,7 @@ jobs:
       - name: 📤 Upload Windows Artifacts (EXE & MSI)
         uses: actions/upload-artifact@v4
         with:
-          name: lumen-v3.7.0-windows-setup
+          name: lumen-v${{ steps.prepare-artifact.outputs.app_version }}-windows-setup
           path: |
             build-windows-output/*
           retention-days: 30
@@ -121,11 +127,11 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.7.0-windows-build-${{ github.run_number }}
-          name: Lumen Desktop Windows v3.7.0 (Build #${{ github.run_number }})
+          tag_name: v${{ steps.prepare-artifact.outputs.app_version }}-windows-build-${{ github.run_number }}
+          name: Lumen Desktop Windows v${{ steps.prepare-artifact.outputs.app_version }} (Build #${{ github.run_number }})
           files: |
             build-windows-output/*
-          body_path: CHANGELOG.md
+          body_path: build-windows-output/RELEASE_NOTES.md
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,7 +144,7 @@ jobs:
           name: Lumen Desktop Windows ${{ github.ref_name }}
           files: |
             build-windows-output/*
-          body_path: CHANGELOG.md
+          body_path: build-windows-output/RELEASE_NOTES.md
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -147,13 +153,13 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "### 🪟 Lumen 3.7.0 Windows Desktop CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### 🪟 Lumen ${{ steps.prepare-artifact.outputs.app_version }} Windows Desktop CI/CD Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ job.status == 'success' && '✅ SUCCESS' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Runner**: \`windows-latest\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact**: \`lumen-v3.7.0-windows-setup\` (.exe installer, .msi package, portable .exe)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: \`lumen-v${{ steps.prepare-artifact.outputs.app_version }}-windows-setup\` (.exe installer, .msi package, portable .exe)" >> $GITHUB_STEP_SUMMARY
           echo "- **Typecheck**: \`npx tsc --noEmit\` (0 errors)" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend Web Build**: \`npm run build:web\` (Expo Metro Export)" >> $GITHUB_STEP_SUMMARY
           echo "- **Tauri Action**: \`tauri-apps/tauri-action@v0\`" >> $GITHUB_STEP_SUMMARY

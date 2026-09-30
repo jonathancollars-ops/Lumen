@@ -56,7 +56,7 @@ if (fs.existsSync(buildAndroidWorkflowPath)) {
   assert(content.includes('assembleRelease') || content.includes('assembleDebug'), 'Executes Gradle assemble task to compile APK');
   assert(content.includes('sha256sum'), 'Generates SHA-256 integrity checksum for standalone APK');
   assert(content.includes('actions/upload-artifact@v4'), 'Uploads APK artifact using actions/upload-artifact@v4');
-  assert(content.includes('lumen-v3.7.0-android-apk'), 'Names artifact lumen-v3.7.0-android-apk');
+  assert(content.includes('android-apk'), 'Names artifact lumen-*-android-apk');
 }
 
 // -------------------------------------------------------------
@@ -120,7 +120,7 @@ if (fs.existsSync(appJsonPath)) {
   assert(typeof appConfig.expo === 'object', 'app.json contains "expo" object');
   assertEqual(appConfig.expo.name, 'Lumen', 'App name is "Lumen"');
   assertEqual(appConfig.expo.slug, 'lumen', 'App slug is "lumen"');
-  assertEqual(appConfig.expo.version, '3.7.0', 'App version is "3.7.0"');
+  assertEqual(appConfig.expo.version, '3.7.1', 'App version is "3.7.1"');
   
   // Android specific config
   assert(typeof appConfig.expo.android === 'object', 'Contains android config');
@@ -148,7 +148,7 @@ assert(fs.existsSync(packageJsonPath), 'package.json exists');
 if (fs.existsSync(packageJsonPath)) {
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   assertEqual(pkg.name, 'lumen', 'Package name is "lumen"');
-  assertEqual(pkg.version, '3.7.0', 'Package version is "3.7.0"');
+  assertEqual(pkg.version, '3.7.1', 'Package version is "3.7.1"');
   assert(pkg.scripts?.test?.includes('run_all.ts'), 'NPM test script executes test runner');
 }
 

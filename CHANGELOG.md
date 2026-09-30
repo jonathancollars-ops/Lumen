@@ -11,6 +11,22 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.1] - 2026-09-30
+### 🔑 Correção de Autenticação Google no Android & Página de Releases Limpa
+- **Redirecionamento OAuth no Android:** Registro dos esquemas de URI `com.jothacsf.organiza` (minúsculo) e `com.jothacsf.Organiza` no `AndroidManifest.xml` via Config Plugin (`withAppActions`), eliminando o redirecionamento indevido para a busca do Google e capturando o token com sucesso.
+- **Fechamento Automático de Janela:** Ativação de `WebBrowser.maybeCompleteAuthSession()` na raiz da aplicação (`App.tsx`), fechando a aba de autenticação assim que o login for aprovado.
+- **Página de Releases Otimizada:** As notas de atualização agora exibem apenas as novidades da versão instalada, com os arquivos de download logo abaixo do resumo sem necessidade de rolagem excessiva.
+
+---
+
+## [3.7.0] - 2026-09-29
+### ☁️ Sincronização em Nuvem Oficial via Firebase Firestore & Resiliência
+- **Sincronização com Firebase Firestore:** Substituição do Google Drive pelo Firestore (`users/{uid}/backup/latest`), com Last-Write-Wins, debouncing de 5 segundos e sincronização offline-first contínua.
+- **Multi-plataforma Unificada:** Autenticação Google via `expo-auth-session` no Android e PKCE loopback server com `tauri-plugin-shell` no Windows Desktop.
+- **Correção de Cold Start:** Adicionados IDs de cliente Google de fallback no `GoogleAuthService`, impedindo crashes em inicializações a frio.
+
+---
+
 ## [3.6.1] - 2026-09-28
 ### 🖥️ Lumen Desktop para Windows (.exe) & Correção de OAuth Google
 - **Lumen para Windows:** Suporte oficial a desktop nativo via Tauri v2 (`src-tauri`), com janela dedicada de 1200x800, suporte a temas e instaladores `.exe` e `.msi`.
