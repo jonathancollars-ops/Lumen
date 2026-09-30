@@ -120,7 +120,7 @@ if (fs.existsSync(appJsonPath)) {
   assert(typeof appConfig.expo === 'object', 'app.json contains "expo" object');
   assertEqual(appConfig.expo.name, 'Lumen', 'App name is "Lumen"');
   assertEqual(appConfig.expo.slug, 'lumen', 'App slug is "lumen"');
-  assertEqual(appConfig.expo.version, '3.7.5', 'App version is "3.7.5"');
+  assertEqual(appConfig.expo.version, '3.7.6', 'App version is "3.7.6"');
   
   // Android specific config
   assert(typeof appConfig.expo.android === 'object', 'Contains android config');
@@ -148,7 +148,7 @@ assert(fs.existsSync(packageJsonPath), 'package.json exists');
 if (fs.existsSync(packageJsonPath)) {
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   assertEqual(pkg.name, 'lumen', 'Package name is "lumen"');
-  assertEqual(pkg.version, '3.7.5', 'Package version is "3.7.5"');
+  assertEqual(pkg.version, '3.7.6', 'Package version is "3.7.6"');
   assert(pkg.scripts?.test?.includes('run_all.ts'), 'NPM test script executes test runner');
 }
 

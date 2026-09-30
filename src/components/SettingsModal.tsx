@@ -433,6 +433,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
@@ -1134,6 +1135,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
+      </View>
     </Modal>
   );
 };

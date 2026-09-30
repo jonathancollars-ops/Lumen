@@ -11,6 +11,14 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.6] - 2026-09-30
+### Sincronização Android/Windows e interface adaptável
+- Envia e recebe alterações automaticamente pelo Firebase usando a mesma conta Google nos dois dispositivos.
+- Mescla a rotina existente por registro, preserva edições durante envios e propaga exclusões. Inclui AACC, projetos em grupo e histórico/CR.
+- Mantém as alterações locais sem internet, tenta novamente ao reconectar e mostra o estado da sincronização nas configurações.
+- Corrige o espaço duplicado do menu lateral e adapta as colunas, a rolagem e os formulários ao tamanho da janela.
+- Preserva a cor do tema nas laterais dos formulários centralizados de configurações e matérias.
+
 ## [3.7.5] - 2026-09-30
 ### Sincronização automática e interface desktop
 - Corrige a leitura dos backups antigos do Firebase e sincroniza automaticamente Android e Windows pela mesma conta Google.

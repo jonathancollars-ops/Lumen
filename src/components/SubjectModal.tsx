@@ -202,6 +202,7 @@ export const SubjectModal: React.FC<Props> = ({ visible, onClose, onSave, theme,
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.headerActionBtn} activeOpacity={0.7}>
@@ -496,6 +497,7 @@ export const SubjectModal: React.FC<Props> = ({ visible, onClose, onSave, theme,
         </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      </View>
     </Modal>
   );
 };
