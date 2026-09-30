@@ -181,6 +181,7 @@ export interface BackupData {
   aaccActivities?: AACCActivity[];
   groupProjects?: GroupProject[];
   gamification?: GamificationData;
+  courseProgress?: CourseProgressData;
 }
 
 // ==========================================

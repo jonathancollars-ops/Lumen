@@ -135,10 +135,10 @@ jobs:
 
           # Calculate SHA-256 Checksums
           cd build-windows-output
-          sha256sum * > SHA256SUMS.txt
+          sha256sum * > SHA256SUMS-windows.txt
           echo ""
           echo "🔐 SHA-256 Checksums:"
-          cat SHA256SUMS.txt
+          cat SHA256SUMS-windows.txt
           cd ..
 
       - name: 📤 Upload Windows Artifacts (EXE & MSI)
@@ -190,10 +190,10 @@ jobs:
           echo "- **Typecheck**: \`npx tsc --noEmit\` (0 errors)" >> $GITHUB_STEP_SUMMARY
           echo "- **Frontend Web Build**: \`npm run build:web\` (Expo Metro Export)" >> $GITHUB_STEP_SUMMARY
           echo "- **Tauri Action**: \`tauri-apps/tauri-action@v0\`" >> $GITHUB_STEP_SUMMARY
-          if [ -f build-windows-output/SHA256SUMS.txt ]; then
+          if [ -f build-windows-output/SHA256SUMS-windows.txt ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "#### 🔐 SHA-256 Checksums:" >> $GITHUB_STEP_SUMMARY
             echo '```text' >> $GITHUB_STEP_SUMMARY
-            cat build-windows-output/SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
+            cat build-windows-output/SHA256SUMS-windows.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi

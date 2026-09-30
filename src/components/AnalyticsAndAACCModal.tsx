@@ -56,7 +56,7 @@ export const AnalyticsAndAACCModal: React.FC<Props> = ({
     if (visible) {
       loadAACCData();
     }
-  }, [visible]);
+  }, [visible, subjects]);
 
   const loadAACCData = async () => {
     const data = await StorageService.getAACCActivities();

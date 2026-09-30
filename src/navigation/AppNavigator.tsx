@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, ScrollView } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -35,7 +35,7 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 const Tab = createBottomTabNavigator();
 
 export function AppNavigator() {
-  const { theme, settings, setSettings, gamification, isInitializing, handleThemeToggle, events, subjects, studySessions, attendances, streak, semesters, setSemesters, refreshData, aiConfig, updateAIConfig } = useApp();
+  const { theme, settings, setSettings, gamification, isInitializing, handleThemeToggle, events, subjects, studySessions, attendances, streak, semesters, setSemesters, refreshData, aiConfig, updateAIConfig, syncCloudNow, cloudSyncStatus } = useApp();
   const colors = getThemeColors(theme);
   const insets = useSafeAreaInsets();
   const { isDesktop } = useResponsive();
@@ -97,7 +97,7 @@ export function AppNavigator() {
       }
     };
     reconcileNotifications();
-  }, [isInitializing]);
+  }, [isInitializing, events, subjects]);
   
   if (isInitializing) {
     return (
@@ -113,7 +113,7 @@ export function AppNavigator() {
       { 
         borderBottomColor: colors.border, 
         backgroundColor: colors.surface,
-        paddingTop: insets.top > 0 ? insets.top + (insets.top >= 54 ? 4 : 8) : (Platform.OS === 'ios' ? 48 : 36),
+        paddingTop: Platform.OS === 'web' ? 12 : insets.top > 0 ? insets.top + (insets.top >= 54 ? 4 : 8) : (Platform.OS === 'ios' ? 48 : 36),
       }
     ]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 8 }}>
@@ -203,7 +203,7 @@ export function AppNavigator() {
   const ResponsiveTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation }) => {
     if (isDesktop) {
       return (
-        <View style={[styles.sidebarContainer, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, paddingTop: 24, paddingBottom: 20, paddingHorizontal: 16 }} style={[styles.sidebarContainer, { backgroundColor: colors.surface, borderRightColor: colors.border }]}>
           {/* Header do Menu Lateral Desktop */}
           <View style={styles.sidebarHeader}>
             <View style={[styles.logoIconBadge, { backgroundColor: colors.primaryLight, width: 38, height: 38, borderRadius: 12 }]}>
@@ -346,7 +346,7 @@ export function AppNavigator() {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       );
     }
 
@@ -433,6 +433,8 @@ export function AppNavigator() {
 
       {/* Global Modals */}
       <SettingsModal 
+        syncCloudNow={syncCloudNow}
+        cloudSyncStatus={cloudSyncStatus}
         visible={settingsModalVisible} 
         onClose={() => setSettingsModalVisible(false)} 
         theme={theme}
@@ -544,11 +546,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 260,
     borderRightWidth: StyleSheet.hairlineWidth,
-    paddingTop: 24,
-    paddingBottom: 20,
-    paddingHorizontal: 16,
     zIndex: 100,
-    justifyContent: 'space-between',
   },
   sidebarHeader: {
     flexDirection: 'row',

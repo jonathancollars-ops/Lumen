@@ -503,6 +503,7 @@ export const SubjectModal: React.FC<Props> = ({ visible, onClose, onSave, theme,
 const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
+    ...(Platform.OS === 'web' ? { width: '100%' as const, maxWidth: 900, alignSelf: 'center' as const, minHeight: 0 } : {}),
     backgroundColor: colors.background,
   },
   header: {

@@ -53,7 +53,7 @@ export const GroupProjectsModal: React.FC<Props> = ({
     if (visible) {
       loadProjects();
     }
-  }, [visible]);
+  }, [visible, subjects]);
 
   const safeSubjects = Array.isArray(subjects) ? subjects.filter(Boolean) : [];
 

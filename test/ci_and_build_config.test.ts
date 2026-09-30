@@ -78,7 +78,7 @@ if (fs.existsSync(buildWindowsWorkflowPath)) {
   assert(content.includes('npx tsc --noEmit'), 'Runs TypeScript pre-release typecheck');
   assert(content.includes('npm test'), 'Runs pre-release test suite');
   assert(content.includes('softprops/action-gh-release@v2'), 'Uses softprops/action-gh-release@v2 for publishing release');
-  assert(content.includes('sha256sum') && content.includes('SHA256SUMS.txt'), 'Generates SHA256SUMS.txt release asset');
+  assert(content.includes('sha256sum') && content.includes('SHA256SUMS-windows.txt'), 'Generates SHA256SUMS-windows.txt release asset');
   assert(content.includes('actions/upload-artifact@v4'), 'Includes release assets backup upload');
 }
 
@@ -120,7 +120,7 @@ if (fs.existsSync(appJsonPath)) {
   assert(typeof appConfig.expo === 'object', 'app.json contains "expo" object');
   assertEqual(appConfig.expo.name, 'Lumen', 'App name is "Lumen"');
   assertEqual(appConfig.expo.slug, 'lumen', 'App slug is "lumen"');
-  assertEqual(appConfig.expo.version, '3.7.4', 'App version is "3.7.4"');
+  assertEqual(appConfig.expo.version, '3.7.5', 'App version is "3.7.5"');
   
   // Android specific config
   assert(typeof appConfig.expo.android === 'object', 'Contains android config');
@@ -148,7 +148,7 @@ assert(fs.existsSync(packageJsonPath), 'package.json exists');
 if (fs.existsSync(packageJsonPath)) {
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   assertEqual(pkg.name, 'lumen', 'Package name is "lumen"');
-  assertEqual(pkg.version, '3.7.4', 'Package version is "3.7.4"');
+  assertEqual(pkg.version, '3.7.5', 'Package version is "3.7.5"');
   assert(pkg.scripts?.test?.includes('run_all.ts'), 'NPM test script executes test runner');
 }
 

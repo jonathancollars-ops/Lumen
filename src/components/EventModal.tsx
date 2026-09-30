@@ -236,7 +236,7 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', justifyContent: 'flex-end' }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', justifyContent: 'flex-end', ...(Platform.OS === 'web' ? { maxWidth: 760, height: '90%', alignSelf: 'center' } : {}) }}>
           <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]} onPress={(e) => e.stopPropagation?.()}>
             <View style={styles.dragHandle} />
             
@@ -748,8 +748,9 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
 
 const getStyles = (colors: ReturnType<typeof getThemeColors>) =>
   StyleSheet.create({
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.65)', justifyContent: 'flex-end' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.65)', justifyContent: Platform.OS === 'web' ? 'center' : 'flex-end' },
     modalContent: {
+      ...(Platform.OS === 'web' ? { width: '100%' as const, maxWidth: 760, alignSelf: 'center' as const, borderRadius: 28 } : {}),
       borderTopLeftRadius: 28,
       borderTopRightRadius: 28,
       padding: 20,

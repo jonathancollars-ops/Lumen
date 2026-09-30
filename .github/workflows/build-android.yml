@@ -144,9 +144,9 @@ jobs:
             
             # Generate SHA-256 Checksum
             cd build-output
-            sha256sum "lumen-v${APP_VER}-standalone.apk" > SHA256SUMS.txt
+            sha256sum "lumen-v${APP_VER}-standalone.apk" > SHA256SUMS-android.txt
             echo "APK generated successfully: $TARGET_APK"
-            cat SHA256SUMS.txt
+            cat SHA256SUMS-android.txt
             cd ..
           else
             echo "❌ Error: APK output file not found!"
@@ -160,7 +160,7 @@ jobs:
           name: lumen-v${{ steps.prepare-artifact.outputs.app_version }}-android-apk
           path: |
             build-output/lumen-v*-standalone.apk
-            build-output/SHA256SUMS.txt
+            build-output/SHA256SUMS-android.txt
           retention-days: 30
           if-no-files-found: error
 
@@ -180,7 +180,7 @@ jobs:
           name: Lumen Acadêmico v${{ steps.prepare-artifact.outputs.app_version }} (Build #${{ github.run_number }})
           files: |
             build-output/lumen-v*-standalone.apk
-            build-output/SHA256SUMS.txt
+            build-output/SHA256SUMS-android.txt
           body_path: build-output/RELEASE_NOTES.md
           generate_release_notes: false
         env:
@@ -194,7 +194,7 @@ jobs:
           name: Lumen Acadêmico ${{ github.ref_name }}
           files: |
             build-output/lumen-v*-standalone.apk
-            build-output/SHA256SUMS.txt
+            build-output/SHA256SUMS-android.txt
           body_path: build-output/RELEASE_NOTES.md
           generate_release_notes: false
         env:
@@ -208,7 +208,7 @@ jobs:
           echo "- **Status**: ${{ job.status == 'success' && '✅ SUCCESS' || '❌ FAILED' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Event**: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact**: \`lumen-v${{ steps.prepare-artifact.outputs.app_version }}-android-apk\` (Standalone APK & SHA256SUMS.txt)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: \`lumen-v${{ steps.prepare-artifact.outputs.app_version }}-android-apk\` (Standalone APK & SHA256SUMS-android.txt)" >> $GITHUB_STEP_SUMMARY
           echo "- **Typecheck**: \`npx tsc --noEmit\` (0 errors)" >> $GITHUB_STEP_SUMMARY
           echo "- **Tests**: \`npm test\` (100% green)" >> $GITHUB_STEP_SUMMARY
           if [ -f gradle_build.log ]; then

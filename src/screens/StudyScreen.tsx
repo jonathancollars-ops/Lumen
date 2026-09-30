@@ -53,7 +53,7 @@ export const StudyScreen: React.FC<Props> = ({
   const navigation = useNavigation<any>();
   const colors = getThemeColors(theme);
   const styles = getStyles(colors);
-  const { isDesktop } = useResponsive();
+  const { isDesktop, hasWideContent } = useResponsive();
 
   let appContext: AppContextData | null = null;
   try {
@@ -1424,10 +1424,10 @@ export const StudyScreen: React.FC<Props> = ({
       {activeTab === 'pomodoro' ? (
         <ScrollView
           style={styles.content}
-          contentContainerStyle={[styles.scrollContentInner, isDesktop && styles.desktopContentWidth]}
+          contentContainerStyle={[styles.scrollContentInner, !isDesktop && { paddingBottom: 120 }, isDesktop && styles.desktopContentWidth]}
           showsVerticalScrollIndicator={false}
         >
-          {isDesktop ? (
+          {hasWideContent ? (
             <View style={styles.desktopColumnsContainer}>
               <View style={styles.desktopLeftColumn}>
                 <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1459,10 +1459,10 @@ export const StudyScreen: React.FC<Props> = ({
       ) : activeTab === 'cronometro' ? (
         <ScrollView
           style={styles.content}
-          contentContainerStyle={[styles.scrollContentInner, isDesktop && styles.desktopContentWidth]}
+          contentContainerStyle={[styles.scrollContentInner, !isDesktop && { paddingBottom: 120 }, isDesktop && styles.desktopContentWidth]}
           showsVerticalScrollIndicator={false}
         >
-          {isDesktop ? (
+          {hasWideContent ? (
             <View style={styles.desktopColumnsContainer}>
               <View style={styles.desktopLeftColumn}>
                 <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1496,7 +1496,7 @@ export const StudyScreen: React.FC<Props> = ({
         </ScrollView>
       ) : (
         <View style={[styles.content, { flex: 1 }, isDesktop && styles.desktopContentWidth]}>
-          {isDesktop ? (
+          {hasWideContent ? (
             <View style={[styles.desktopColumnsContainer, { flex: 1 }]}>
               <View style={styles.desktopLeftColumn}>
                 {renderAddTaskForm()}
@@ -1757,11 +1757,11 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   desktopLeftColumn: {
     flex: 1,
-    minWidth: 360,
+    minWidth: 0,
   },
   desktopRightColumn: {
     flex: 1.2,
-    minWidth: 380,
+    minWidth: 0,
   },
   desktopHeaderWidth: {
     maxWidth: 1200,

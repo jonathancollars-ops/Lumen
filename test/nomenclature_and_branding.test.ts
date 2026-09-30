@@ -41,7 +41,7 @@ async function runNomenclatureTests() {
     assert(fs.existsSync(pkgPath), 'package.json exists');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     assert(pkg.name === 'lumen', `package.json "name" is "lumen" (got: "${pkg.name}")`);
-    assert(pkg.version === '3.7.4', `package.json "version" is "3.7.4" (got: "${pkg.version}")`);
+    assert(pkg.version === '3.7.5', `package.json "version" is "3.7.5" (got: "${pkg.version}")`);
   });
 
   // Test 2: app.json branding
@@ -51,7 +51,7 @@ async function runNomenclatureTests() {
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
     assert(appJson.expo.name === 'Lumen', `app.json expo.name is "Lumen" (got: "${appJson.expo.name}")`);
     assert(appJson.expo.slug === 'lumen', `app.json expo.slug is "lumen" (got: "${appJson.expo.slug}")`);
-    assert(appJson.expo.version === '3.7.4', `app.json expo.version is "3.7.4" (got: "${appJson.expo.version}")`);
+    assert(appJson.expo.version === '3.7.5', `app.json expo.version is "3.7.5" (got: "${appJson.expo.version}")`);
   });
 
   // Test 3: strings.xml Android app_name — only valid after expo prebuild
@@ -173,17 +173,17 @@ async function runNomenclatureTests() {
     }
   });
 
-  // Test 10: Version 3.7.4 alignment across version.ts, package.json, app.json, and AppUpdateService
-  await test('10. Version 3.7.4 alignment across version.ts, package.json, app.json and AppUpdateService', () => {
+  // Test 10: Version 3.7.5 alignment across version.ts, package.json, app.json, and AppUpdateService
+  await test('10. Version 3.7.5 alignment across version.ts, package.json, app.json and AppUpdateService', () => {
     const pkgPath = path.join(projectRoot, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     const appJsonPath = path.join(projectRoot, 'app.json');
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
 
-    assert(APP_VERSION === '3.7.4', `APP_VERSION is "3.7.4" (got: "${APP_VERSION}")`);
-    assert(pkg.version === '3.7.4', `package.json version is "3.7.4" (got: "${pkg.version}")`);
-    assert(appJson.expo.version === '3.7.4', `app.json expo.version is "3.7.4" (got: "${appJson.expo.version}")`);
-    assert(AppUpdateService.getCurrentVersion() === '3.7.4', `AppUpdateService.getCurrentVersion() is "3.7.4" (got: "${AppUpdateService.getCurrentVersion()}")`);
+    assert(APP_VERSION === '3.7.5', `APP_VERSION is "3.7.5" (got: "${APP_VERSION}")`);
+    assert(pkg.version === '3.7.5', `package.json version is "3.7.5" (got: "${pkg.version}")`);
+    assert(appJson.expo.version === '3.7.5', `app.json expo.version is "3.7.5" (got: "${appJson.expo.version}")`);
+    assert(AppUpdateService.getCurrentVersion() === '3.7.5', `AppUpdateService.getCurrentVersion() is "3.7.5" (got: "${AppUpdateService.getCurrentVersion()}")`);
   });
 
   console.log('================================================================');

@@ -1,13 +1,14 @@
 /**
- * FirebaseBackupService — Lumen v3.7.0
- *
- * Replaces GoogleDriveSyncService. Stores a single "latest" snapshot document
- * per user in Firestore (users/{uid}/backup/latest). Strategy: Last-Write-Wins
- * by ISO updatedAt timestamp.
+ * Firestore transport for the per-user routine. synchronize() merges changes
+ * transactionally against a persisted device baseline; subscribe() wakes the
+ * sync engine when another device saves. Legacy backup helpers remain available.
  */
 
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { validateBackupSchema } from './storage';
+import { cleanSyncData, mergeSyncBackups, sameData, syncContent, SyncBackup } from './SyncBackupModel';
+import { APP_VERSION } from '../utils/version';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,8 @@ export interface FirestoreDeps {
   doc?: (firestore: any, ...pathSegments: string[]) => any;
   setDoc?: (documentRef: any, data: any) => Promise<void>;
   getDoc?: (documentRef: any) => Promise<any>;
+  onSnapshot?: typeof onSnapshot;
+  runTransaction?: typeof runTransaction;
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -45,6 +48,8 @@ export class FirebaseBackupService {
     doc: (firestore: any, ...pathSegments: string[]) => any;
     setDoc: (documentRef: any, data: any) => Promise<void>;
     getDoc: (documentRef: any) => Promise<any>;
+    onSnapshot: typeof onSnapshot;
+    runTransaction: typeof runTransaction;
   };
 
   constructor(userId: string, deps?: FirestoreDeps) {
@@ -54,6 +59,8 @@ export class FirebaseBackupService {
       doc: deps?.doc ?? doc,
       setDoc: deps?.setDoc ?? setDoc,
       getDoc: deps?.getDoc ?? getDoc,
+      onSnapshot: deps?.onSnapshot ?? onSnapshot,
+      runTransaction: deps?.runTransaction ?? runTransaction,
     };
   }
 
@@ -64,6 +71,37 @@ export class FirebaseBackupService {
     return this.deps.doc(this.deps.db, 'users', this.userId, 'backup', 'latest');
   }
 
+  private normalize(raw: any): SyncBackup {
+    if (!raw || !['events', 'subjects', 'attendances', 'tasks', 'studySessions', 'semesters'].every(key => Array.isArray(raw[key]))) {
+      throw new Error('O backup do Firebase está incompleto. A rotina local foi preservada.');
+    }
+    const candidate = cleanSyncData({ ...raw, version: raw.version ?? 2, timestamp: raw.timestamp ?? raw.updatedAt ?? new Date().toISOString() });
+    const validation = validateBackupSchema(candidate);
+    if (!validation.isValid || !validation.data) throw new Error('O backup do Firebase tem dados inválidos. A rotina local foi preservada.');
+    return cleanSyncData({ ...validation.data, deletedRecords: candidate.deletedRecords ?? {}, updatedAt: candidate.updatedAt });
+  }
+
+  /** Notifications only wake the serialized sync loop. Cached snapshots never
+   * replace local data; the transaction reads the current server document. */
+  subscribe(onChange: () => void, onError: (error: Error) => void): () => void {
+    return this.deps.onSnapshot(this.backupRef(), () => onChange(), onError);
+  }
+
+  async synchronize(base: SyncBackup | null, local: SyncBackup, platform: string): Promise<SyncBackup> {
+    return this.deps.runTransaction(this.deps.db, async transaction => {
+      const snapshot = await transaction.get(this.backupRef());
+      const remote = snapshot.exists() ? this.normalize(snapshot.data()) : null;
+      const merged = mergeSyncBackups(base, local, remote);
+      if (!sameData(syncContent(merged), syncContent(remote))) {
+        const now = new Date().toISOString();
+        const payload = cleanSyncData({ ...merged, version: 2, timestamp: now, updatedAt: now, appVersion: APP_VERSION, devicePlatform: platform });
+        transaction.set(this.backupRef(), payload);
+        return payload;
+      }
+      return remote!;
+    });
+  }
+
   // ── Public API ───────────────────────────────────────────────────────────
 
   /**
@@ -71,10 +109,12 @@ export class FirebaseBackupService {
    * Throws on network/permission errors so callers can show an alert.
    */
   async uploadBackup(data: LumenBackupUpload): Promise<void> {
-    const payload: LumenBackupData = {
+    const payload = cleanSyncData({
       ...data,
+      version: 2,
+      timestamp: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    });
     await this.deps.setDoc(this.backupRef(), payload);
     console.log('[FirebaseBackup] Upload concluído:', payload.updatedAt);
   }

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { withStorageWrite, notifyStorageChange } from './StorageChanges';
 import {
   AppEvent,
   ThemeType,
@@ -15,7 +16,8 @@ import {
   GroupProject,
   GamificationData,
   ActiveTimerState,
-  SavedTimerState
+  SavedTimerState,
+  CourseProgressData
 } from '../types';
 import { getCurrentSemesterId, getCurrentSemesterName } from '../utils';
 import { CourseCRService } from './CourseCRService';
@@ -272,7 +274,10 @@ export async function safeSetItem(key: string, value: string): Promise<boolean> 
   }
 
   try {
-    await AsyncStorage.setItem(key, value);
+    await withStorageWrite(async () => {
+      await AsyncStorage.setItem(key, value);
+      notifyStorageChange(key);
+    });
     return true;
   } catch (error: unknown) {
     const isQuota = isDiskQuotaError(error);
@@ -447,6 +452,15 @@ export function validateBackupSchema(input: unknown): BackupValidationResult {
 
   // Validate groupProjects
   const rawGroupProjects = validateArrayOfObjects('groupProjects');
+  let courseProgress: CourseProgressData | undefined;
+  if (raw.courseProgress != null) {
+    const progress = raw.courseProgress as CourseProgressData;
+    if (typeof progress !== 'object' || Array.isArray(progress) || !Array.isArray(progress.semesters) ||
+        !progress.semesters.every(semester => semester && typeof semester.semesterNumber === 'number' &&
+          Array.isArray(semester.subjects) && semester.subjects.every(subject => subject && typeof subject.id === 'string'))) {
+      errors.push('Campo "courseProgress" deve conter uma matriz curricular válida.');
+    } else courseProgress = progress;
+  }
 
   // Validate settings object if present
   let settingsObj: Partial<AppSettings> | undefined = undefined;
@@ -499,6 +513,7 @@ export function validateBackupSchema(input: unknown): BackupValidationResult {
     aaccActivities: (rawAacc ? rawAacc.filter(Boolean) : undefined) as AACCActivity[] | undefined,
     groupProjects: (rawGroupProjects ? rawGroupProjects.filter(Boolean) : undefined) as GroupProject[] | undefined,
     gamification: gamificationObj,
+    courseProgress,
   };
 
   return {
@@ -1382,7 +1397,7 @@ export const StorageService = {
    * Export all user application data into a single structured JSON object
    */
   async exportBackup(): Promise<BackupData> {
-    const [events, subjects, attendances, tasks, studySessions, semesters, settings, aaccActivities, groupProjects, gamification, streak] = await Promise.all([
+    const [events, subjects, attendances, tasks, studySessions, semesters, settings, aaccActivities, groupProjects, gamification, streak, courseProgressRaw] = await Promise.all([
       this.getEvents(),
       this.getSubjects(),
       this.getAttendances(),
@@ -1394,6 +1409,7 @@ export const StorageService = {
       this.getGroupProjects(),
       this.getGamificationData(),
       this.getStreak(),
+      AsyncStorage.getItem('@lumen_course_progress'),
     ]);
 
     const rawBackup: BackupData = {
@@ -1410,6 +1426,7 @@ export const StorageService = {
       aaccActivities,
       groupProjects,
       gamification,
+      courseProgress: courseProgressRaw ? JSON.parse(courseProgressRaw) : undefined,
     };
 
     // Deep sanitize backup to guarantee zero credential leakage (API keys, tokens, secrets)
@@ -1459,6 +1476,10 @@ export const StorageService = {
 
     try {
       const writeResults: boolean[] = [];
+      if (validData.courseProgress) {
+        await CourseCRService.saveCourseProgress(validData.courseProgress);
+        writeResults.push(true);
+      }
 
       if (Array.isArray(validData.events)) {
         writeResults.push(await this.saveEvents(validData.events));
@@ -1502,7 +1523,7 @@ export const StorageService = {
         console.warn('[StorageService] Alguns blocos do backup falharam ao serem persistidos devido a restrição de armazenamento.');
       }
 
-      return true;
+      return allSuccess;
     } catch (err: unknown) {
       console.error('[StorageService] Erro ao restaurar backup', err);
       throw err;
@@ -1524,7 +1545,8 @@ export const StorageService = {
     } catch {
       // Ignored safely
     }
-    await AsyncStorage.multiRemove([
+    await withStorageWrite(async () => {
+      await AsyncStorage.multiRemove([
       EVENTS_KEY,
       THEME_KEY,
       SUBJECTS_KEY,
@@ -1542,6 +1564,9 @@ export const StorageService = {
       ACTIVE_TIMER_KEY,
       GOOGLE_CLIENT_ID_KEY,
       '@organiza_local_ai_model_info',
-    ]);
+      '@lumen_course_progress',
+      ]);
+      notifyStorageChange(EVENTS_KEY);
+    });
   }
 };

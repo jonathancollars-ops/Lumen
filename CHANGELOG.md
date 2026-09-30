@@ -11,6 +11,16 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.5] - 2026-09-30
+### Sincronização automática e interface desktop
+- Corrige a leitura dos backups antigos do Firebase e sincroniza automaticamente Android e Windows pela mesma conta Google.
+- Mescla alterações por registro e campo em transações, preserva edições durante envios e propaga exclusões sem recriar registros antigos.
+- Mantém alterações locais enquanto não há conexão e tenta sincronizar novamente. Exibe falhas de acesso ou rede nas configurações.
+- Inclui AACC, projetos em grupo e histórico/CR; as credenciais de IA continuam locais.
+- Faz o botão “Sincronizar Agora” enviar e receber dados de verdade.
+- Corrige o espaço duplicado do menu lateral, adapta as colunas à largura útil, permite rolar o menu em janelas baixas e limita a largura dos formulários no desktop.
+- Adiciona testes de sincronização entre dois dispositivos, migração, conflitos, exclusões e proteção contra falhas de armazenamento.
+
 ## [3.7.4] - 2026-09-30
 ### Login Google nativo no Windows
 - Implementa e registra o servidor local de retorno da autenticação no aplicativo Windows e a abertura do navegador padrão pelo componente nativo.

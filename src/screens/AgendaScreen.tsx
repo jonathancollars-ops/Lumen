@@ -69,7 +69,7 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
 }) => {
   const colors = getThemeColors(theme);
   const styles = useMemo(() => getStyles(colors, theme), [colors, theme]);
-  const { isDesktop } = useResponsive();
+  const { isDesktop, hasWideContent } = useResponsive();
 
   // View mode toggle: 'checklist' vs 'timeline'
   const [viewMode, setViewMode] = useState<'checklist' | 'timeline'>('checklist');
@@ -1365,7 +1365,7 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
           </View>
         </View>
 
-        {isDesktop ? (
+        {hasWideContent ? (
           <View style={styles.desktopColumnsContainer}>
             <View style={styles.desktopLeftColumn}>
               {renderWeeklyStrip()}
@@ -2095,10 +2095,10 @@ const getStyles = (colors: any, theme: ThemeType) => StyleSheet.create({
   },
   desktopLeftColumn: {
     flex: 1,
-    minWidth: 380,
+    minWidth: 0,
   },
   desktopRightColumn: {
     flex: 1.3,
-    minWidth: 420,
+    minWidth: 0,
   },
 });

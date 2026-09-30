@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { withStorageWrite, notifyStorageChange } from './StorageChanges';
 import {
   Subject,
   CourseProgressData,
@@ -1281,9 +1282,13 @@ export class CourseCRService {
 
   static async saveCourseProgress(data: CourseProgressData): Promise<void> {
     try {
-      await AsyncStorage.setItem(COURSE_PROGRESS_STORAGE_KEY, JSON.stringify(data));
+      await withStorageWrite(async () => {
+        await AsyncStorage.setItem(COURSE_PROGRESS_STORAGE_KEY, JSON.stringify(data));
+        notifyStorageChange(COURSE_PROGRESS_STORAGE_KEY);
+      });
     } catch (e) {
       console.error('Erro ao salvar progresso do curso:', e);
+      throw e;
     }
   }
 }

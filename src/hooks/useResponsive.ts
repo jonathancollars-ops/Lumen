@@ -7,6 +7,8 @@ export interface ResponsiveInfo {
   isTablet: boolean;  // Width 768px - 1024px
   isPhone: boolean;   // Width < 768px
   columns: number;    // Multi-column layout helper
+  contentWidth: number;
+  hasWideContent: boolean;
 }
 
 /**
@@ -18,6 +20,8 @@ export function useResponsive(): ResponsiveInfo {
   const isDesktop = width > 1024;
   const isTablet = width >= 768 && width <= 1024;
   const isPhone = width < 768;
+  const contentWidth = Math.max(0, width - (isDesktop ? 260 : 0));
+  const hasWideContent = contentWidth >= 900;
 
   return {
     width,
@@ -25,6 +29,8 @@ export function useResponsive(): ResponsiveInfo {
     isDesktop,
     isTablet,
     isPhone,
-    columns: isDesktop || isTablet ? 2 : 1,
+    contentWidth,
+    hasWideContent,
+    columns: hasWideContent ? 2 : 1,
   };
 }

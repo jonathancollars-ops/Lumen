@@ -24,10 +24,13 @@ import { describeGoogleLoginError, GoogleLoginError, GoogleLoginStage, GOOGLE_LO
 import * as Google from 'expo-auth-session/providers/google';
 import { generateId } from '../utils/id';
 import { APP_VERSION } from '../utils/version';
+import type { CloudSyncStatus } from '../services/CloudSyncEngine';
 import * as Haptics from 'expo-haptics';
 
 
 export interface SettingsModalProps {
+  syncCloudNow?: () => Promise<{ success: boolean; message: string }>;
+  cloudSyncStatus?: CloudSyncStatus;
   visible: boolean;
   onClose: () => void;
   theme: ThemeType;
@@ -58,7 +61,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenGuide,
   onRestoreSuccess,
   onCheckUpdates,
-  onOpenUpdateModal
+  onOpenUpdateModal,
+  syncCloudNow,
+  cloudSyncStatus,
 }) => {
   const colors = getThemeColors(theme);
   const styles = getStyles(colors);
@@ -312,12 +317,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
   const handleSyncNow = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setIsSyncing(true);
     try {
-      // Dispatch to context's syncCloudNow (which uses FirebaseBackupService)
-      // The prop is not passed directly, so we trigger via GoogleAuthService's backup
-      Alert.alert('Sincronizando...', 'Seu backup está sendo enviado para o Firebase.');
+      if (!syncCloudNow) throw new Error('A sincronização ainda não está disponível.');
+      const result = await syncCloudNow();
+      Alert.alert(result.success ? 'Sincronização concluída' : 'Falha na sincronização', result.message);
     } catch (error: any) {
       Alert.alert('Erro ao Sincronizar', error?.message || 'Falha na conexão com o Firebase.');
     } finally {
@@ -771,6 +776,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {firebaseUser ? (
 
                   <>
+                    <Text accessibilityLiveRegion="polite" style={{ color: cloudSyncStatus?.state === 'error' ? colors.danger : colors.textSecondary, marginBottom: 12, lineHeight: 20 }}>
+                      {cloudSyncStatus?.message ?? 'Preparando a sincronização…'}
+                      {cloudSyncStatus?.lastSyncedAt ? `\nÚltima sincronização: ${new Date(cloudSyncStatus.lastSyncedAt).toLocaleTimeString()}` : ''}
+                    </Text>
                     {/* Header: User Profile / Email & Disconnect */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10 }}>
@@ -1134,6 +1143,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    ...(Platform.OS === 'web' ? { width: '100%' as const, maxWidth: 1000, alignSelf: 'center' as const, minHeight: 0 } : {}),
   },
   header: {
     flexDirection: 'row',

@@ -356,16 +356,8 @@ async function runTestSuite() {
     pass('SettingsModal.tsx contains all required Firebase Cloud Sync UI elements');
   });
 
-  await test('AppContext.tsx incorporates 5-second debounce with Firebase', () => {
-    const contextPath = path.resolve(__dirname, '../src/contexts/AppContext.tsx');
-    const content = fs.readFileSync(contextPath, 'utf8');
-
-    assert(content.includes('triggerDebouncedCloudSync'), 'Defines triggerDebouncedCloudSync');
-    assert(content.includes('5000'), 'Uses 5000ms debounce interval');
-    assert(content.includes('FirebaseBackupService'), 'Uses FirebaseBackupService');
-    assert(content.includes('GoogleAuthService'), 'Uses GoogleAuthService for auth');
-    pass('AppContext.tsx has 5-second debounce and Firebase integration');
-  });
+  // Firebase scheduling and bidirectional behavior are exercised against the
+  // real CloudSyncEngine in cloud_sync.test.ts, rather than source-text checks.
 
   console.log('\n================================================================');
   console.log(`SUMMARY: ${passed}/${passed + failed} Tests Passed (${failed} Failed)`);
