@@ -69,6 +69,22 @@ A implementação Windows inicia o listener antes de abrir o navegador, valida o
 
 Referência: [OAuth do Google para aplicativos desktop](https://developers.google.com/identity/protocols/oauth2/native-app#loopback-ip-address).
 
+### Cliente de desktop criado em outro projeto
+
+O cliente Windows fornecido está no projeto Google Cloud `lumen-510016`, enquanto o Android e o Windows distribuídos usam o Firebase `lumen-app-academico`. Um cliente externo precisa ser autorizado no provedor Google do Firebase usado pelo aplicativo. O sucesso da troca de tokens no Google não confirma essa autorização no Firebase.
+
+1. Abra [Authentication → Provedores no Firebase do app](https://console.firebase.google.com/project/lumen-app-academico/authentication/providers).
+2. Em **Método de login**, abra o provedor **Google**.
+3. Expanda **Adicionar IDs de cliente à lista de permissões a partir de projetos externos**.
+4. Adicione `42411396434-9usdgo1vck957t1dra98otrl0a8fgf2f.apps.googleusercontent.com` e salve.
+5. Tente conectar novamente no Windows 3.7.4. Esse ajuste é feito no servidor e não exige um novo instalador.
+
+Não substitua o ID Web ou seu segredo por credenciais de desktop: a lista de permissões é uma configuração separada. Mantenha o projeto Firebase usado pelo Android para que ambos acessem os mesmos usuários e dados.
+
+Se ocorrer `auth/invalid-credential` na etapa **Autenticação no Firebase**, confira essa autorização e a configuração do provedor antes de gerar outra versão. O código genérico, isoladamente, não identifica a causa da rejeição.
+
+Referência: [Firebase: permitir clientes de projetos externos](https://support.google.com/firebase/answer/6401008?hl=pt-BR).
+
 ## 8. Verificar
 
 Após configurar o `.env`, rode:
