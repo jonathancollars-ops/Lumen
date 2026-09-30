@@ -44,6 +44,9 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID)) {
             throw 'Configure the repository variable GOOGLE_DESKTOP_CLIENT_ID with a Google Desktop app OAuth client before publishing Windows installers.'
           }
+          if ([string]::IsNullOrWhiteSpace($env:GOOGLE_DESKTOP_CLIENT_SECRET)) {
+            throw 'Configure the repository secret GOOGLE_DESKTOP_CLIENT_SECRET required by the Windows OAuth client before publishing installers.'
+          }
 
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4

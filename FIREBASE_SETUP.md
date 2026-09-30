@@ -56,12 +56,12 @@ Ainda em **Configurações → Geral**:
 ## 7. Configurar o cliente Google para Windows
 
 1. Abra [Google Auth Platform → Clientes](https://console.cloud.google.com/auth/clients?project=lumen-app-academico) no mesmo projeto usado pelo Firebase.
-2. Clique em **Criar cliente** e escolha **App para computador / Desktop app**. Nomeie como **Lumen Windows**.
+2. Abra o cliente existente do tipo **App para computador / Desktop app**. Se ainda não houver um, crie **Lumen Windows** com esse tipo.
 3. Copie o **ID do cliente** para `EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID` no `.env` local.
 4. Para os instaladores do GitHub, salve esse ID na variável de repositório `GOOGLE_DESKTOP_CLIENT_ID` em **Settings → Secrets and variables → Actions → Variables**.
 5. Gere um novo instalador depois de configurar a variável: o Expo incorpora as variáveis `EXPO_PUBLIC_*` durante a compilação.
 
-Se a configuração desse cliente incluir um `client_secret` necessário à troca de tokens, use o secret de Actions `GOOGLE_DESKTOP_CLIENT_SECRET`. Ele é lido apenas pelo componente Rust durante a compilação; não o coloque em variáveis `EXPO_PUBLIC_*` nem em arquivos versionados. Para compilar localmente, disponibilize `GOOGLE_DESKTOP_CLIENT_SECRET` no ambiente do processo Cargo/Tauri.
+O cliente Windows configurado exige também seu `client_secret` na troca de tokens, confirmado pela resposta `client_secret is missing` do Google. Salve esse valor no secret de Actions `GOOGLE_DESKTOP_CLIENT_SECRET`, em **Settings → Secrets and variables → Actions → New repository secret**. Ele é lido apenas pelo componente Rust durante a compilação; não o coloque em variáveis `EXPO_PUBLIC_*` nem em arquivos versionados. Para compilar localmente, disponibilize `GOOGLE_DESKTOP_CLIENT_SECRET` no ambiente do processo Cargo/Tauri. Sem esse secret, a publicação de instaladores Windows é interrompida.
 
 O cliente de desktop permite o retorno por `http://127.0.0.1:<porta>/oauth2callback`; a porta é escolhida pelo aplicativo a cada tentativa. Não há um campo de URIs autorizadas para editar nesse tipo de cliente. O cliente Web continua sendo usado somente pelo site. Não altere o cliente Android que já funciona.
 
