@@ -1,4 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import type { Auth } from 'firebase/auth';
+import { Platform } from 'react-native';
 
 /**
  * Firebase configuration — values come from EXPO_PUBLIC_* env vars.
@@ -24,9 +26,49 @@ const hasCredentials = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId
 // Avoid duplicate initialization in hot-reload scenarios
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
+
 // Lazy import to avoid auth initializing before the guard check
 let _db: ReturnType<typeof import('firebase/firestore')['getFirestore']> | null = null;
-let _auth: ReturnType<typeof import('firebase/auth')['getAuth']> | null = null;
+let _auth: Auth | null = null;
+
+function createFirebaseAuth(): Auth | null {
+  if (!hasCredentials) return null;
+
+  try {
+    const firebaseAuth = require('firebase/auth');
+    const { initializeAuth, getAuth } = firebaseAuth;
+
+    // On native mobile (Android / iOS), initialize Auth with AsyncStorage persistence.
+    // This ensures the authenticated session persists when the user exits/closes the app.
+    if (Platform.OS !== 'web') {
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const getReactNativePersistence =
+          firebaseAuth.getReactNativePersistence ??
+          (() => {
+            try {
+              return require('@firebase/auth/dist/rn/index.js')?.getReactNativePersistence;
+            } catch {
+              return null;
+            }
+          })();
+
+        if (typeof getReactNativePersistence === 'function' && AsyncStorage && typeof initializeAuth === 'function') {
+          return initializeAuth(app, {
+            persistence: getReactNativePersistence(AsyncStorage),
+          });
+        }
+      } catch {
+        // If initializeAuth throws (e.g. already initialized in hot-reload), fallback below
+      }
+    }
+
+    // Web / Desktop (Tauri) / Node fallback
+    return getAuth(app);
+  } catch {
+    return null;
+  }
+}
 
 export function getDb() {
   if (!_db) {
@@ -36,17 +78,19 @@ export function getDb() {
   return _db!;
 }
 
-export function getFirebaseAuth() {
+export function getFirebaseAuth(): Auth | null {
+  if (!hasCredentials) return null;
   if (!_auth) {
-    const { getAuth } = require('firebase/auth');
-    _auth = getAuth(app);
+    _auth = createFirebaseAuth();
   }
-  return _auth!;
+  return _auth;
 }
 
 // Backwards-compatible named exports for direct imports
 // These are safe to import — they return null when credentials are missing.
 export const db   = hasCredentials ? (() => { const { getFirestore } = require('firebase/firestore'); return getFirestore(app); })() : null as any;
-export const auth = hasCredentials ? (() => { const { getAuth } = require('firebase/auth'); return getAuth(app); })() : null as any;
+export const auth = hasCredentials ? getFirebaseAuth() : null as any;
 export default app;
+
+
 

@@ -58,6 +58,21 @@ export class GoogleAuthService {
     return auth.currentUser;
   }
 
+  /**
+   * Resolves when the initial authentication state has finished restoring from
+   * persistence (AsyncStorage on mobile, IndexedDB on web/desktop).
+   */
+  static async waitForAuthReady(): Promise<User | null> {
+    if (!auth) return null;
+    if (typeof (auth as any).authStateReady === 'function') {
+      try {
+        await (auth as any).authStateReady();
+      } catch {}
+    }
+    return auth.currentUser;
+  }
+
+
   /** Subscribe to auth state changes. Returns unsubscribe function. */
   static onAuthChange(callback: (user: User | null) => void): () => void {
     if (!auth) {

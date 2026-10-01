@@ -28,9 +28,12 @@ jest.mock('firebase/firestore', () => ({
 
 // Mock firebase/auth — prevent auth/invalid-api-key
 jest.mock('firebase/auth', () => ({
-  getAuth:              jest.fn(() => ({})),
-  signInWithCredential: jest.fn(async () => ({ user: { uid: 'mock-uid', email: 'test@lumen.app', displayName: 'Usuário Teste' } })),
-  signOut:              jest.fn(async () => undefined),
-  onAuthStateChanged:   jest.fn((_auth: any, cb: any) => { cb(null); return jest.fn(); }),
-  GoogleAuthProvider:   { credential: jest.fn(() => ({ providerId: 'google.com' })) },
+  getAuth:                    jest.fn(() => ({})),
+  initializeAuth:             jest.fn(() => ({})),
+  getReactNativePersistence:   jest.fn(() => ({})),
+  signInWithCredential:       jest.fn(async () => ({ user: { uid: 'mock-uid', email: 'test@lumen.app', displayName: 'Usuário Teste' } })),
+  signOut:                    jest.fn(async () => undefined),
+  onAuthStateChanged:         jest.fn((_auth: any, cb: any) => { cb(null); return jest.fn(); }),
+  GoogleAuthProvider:         { credential: jest.fn(() => ({ providerId: 'google.com' })) },
 }));
+
