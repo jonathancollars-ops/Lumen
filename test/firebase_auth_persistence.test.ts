@@ -66,20 +66,22 @@ async function runTestSuite() {
   });
 
   await test('T5: GoogleAuthService.onAuthChange notifies subscriber when auth state changes', async () => {
-    let notified = false;
-    let receivedUser: any = undefined;
-
-    const unsubscribe = GoogleAuthService.onAuthChange((user) => {
-      notified = true;
-      receivedUser = user;
+    const receivedUser = await new Promise<any>((resolve, reject) => {
+      let unsub: (() => void) | null = null;
+      const timer = setTimeout(() => reject(new Error('onAuthChange timed out')), 2000);
+      unsub = GoogleAuthService.onAuthChange((user) => {
+        clearTimeout(timer);
+        if (unsub) unsub();
+        else setTimeout(() => unsub?.(), 0);
+        resolve(user);
+      });
+      assert.equal(typeof unsub, 'function', 'Returns unsubscribe function');
     });
 
-    assert.equal(typeof unsubscribe, 'function', 'Returns unsubscribe function');
-    assert.equal(notified, true, 'Callback was triggered with initial state');
     assert.equal(receivedUser, null, 'Initial test state is null');
-
-    unsubscribe();
   });
+
+
 
   await test('T6: initializeAuth configures persistence object with LOCAL storage type', () => {
     const rnAuth = require('../node_modules/@firebase/auth/dist/rn/index.js');
