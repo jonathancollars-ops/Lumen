@@ -37,6 +37,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 }) => {
   const colors = getThemeColors(theme);
   const styles = React.useMemo(() => createStyles(colors, theme), [colors, theme]);
+  const isDesktop = AppUpdateService.isDesktop();
 
   const [status, setStatus] = useState<UpdateModalStatus>('idle');
   const [progressPercent, setProgressPercent] = useState<number>(0);
@@ -139,16 +140,58 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const handleStartDownload = async () => {
     if (!updateInfo.downloadUrl) {
       setStatus('error');
-      setErrorMessage('O link para download do APK não foi encontrado nesta versão.');
+      setErrorMessage(
+        isDesktop
+          ? 'O instalador para Windows (.exe) não foi encontrado nesta versão.'
+          : 'O link para download do APK não foi encontrado nesta versão.'
+      );
       return;
     }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
     setStatus('downloading');
     setProgressPercent(0);
     setDownloadedBytes(0);
     setTotalBytes(0);
     setErrorMessage(null);
+
+    if (isDesktop) {
+      try {
+        const result = await AppUpdateService.downloadAndInstallDesktop(
+          updateInfo.downloadUrl,
+          (progress, total, downloaded) => {
+            const rawPercent = (total && total > 0) ? (downloaded / total) * 100 : (progress || 0) * 100;
+            const safePercent = Math.min(Math.max(Math.round(rawPercent || 0), 0), 100);
+            setProgressPercent(safePercent);
+            setDownloadedBytes(downloaded || 0);
+            setTotalBytes(total || 0);
+          }
+        );
+
+        if (result.success) {
+          setProgressPercent(100);
+          setStatus('ready_to_install');
+          try {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch {}
+        } else {
+          setStatus('error');
+          setErrorMessage(result.error || 'Erro durante o download do instalador.');
+          try {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          } catch {}
+        }
+      } catch (err: any) {
+        setStatus('error');
+        setErrorMessage(err?.message || 'Falha inesperada ao transferir atualização.');
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } catch {}
+      }
+      return;
+    }
 
     try {
       const result = await AppUpdateService.downloadUpdateApk(
@@ -195,7 +238,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   };
 
   const handleCancelDownload = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
     await AppUpdateService.cancelDownload();
     setStatus('idle');
     setProgressPercent(0);
@@ -204,8 +249,22 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   };
 
   const handleInstall = async () => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
+
+    if (isDesktop) {
+      if (updateInfo.downloadUrl) {
+        const res = await AppUpdateService.downloadAndInstallDesktop(updateInfo.downloadUrl);
+        if (!res.success) {
+          setStatus('error');
+          setErrorMessage(res.error || 'Não foi possível iniciar o instalador do Windows.');
+        }
+      }
+      return;
+    }
+
     if (!downloadedFileUri) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const res = await AppUpdateService.installApk(downloadedFileUri);
     if (!res.success) {
       setStatus('error');
@@ -293,9 +352,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
                 <Text style={styles.subtitle}>
                   {status === 'downloading'
-                    ? 'Transferindo pacote de instalação do Lumen.'
+                    ? (isDesktop ? 'Baixando instalador do Windows...' : 'Transferindo pacote de instalação do Lumen.')
                     : status === 'ready_to_install'
-                    ? 'O pacote foi baixado com sucesso no dispositivo.'
+                    ? (isDesktop ? 'O instalador do Windows está pronto para execução.' : 'O pacote foi baixado com sucesso no dispositivo.')
                     : status === 'error'
                     ? 'Não foi possível concluir o download do instalador.'
                     : 'Uma nova versão do Lumen está pronta para você.'}
@@ -316,7 +375,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               </View>
 
               {/* Aviso de Transição de Chave Oficial (Demandas 5 e 7) */}
-              {(status === 'idle' || status === 'ready_to_install') && (
+              {!isDesktop && (status === 'idle' || status === 'ready_to_install') && (
                 <View style={[styles.keystoreNoticeCard, { backgroundColor: colors.surfaceSubtle, borderColor: theme === 'light' ? '#f59e0b' : '#d97706' }]}>
                   <View style={styles.keystoreNoticeHeader}>
                     <Text style={styles.keystoreNoticeHeaderIcon}>🛡️</Text>
@@ -416,7 +475,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                       Pronto para Instalação
                     </Text>
                     <Text style={styles.statusBoxDesc}>
-                      Toque no botão abaixo para abrir o instalador do Android e concluir o processo.
+                      {isDesktop
+                        ? 'O instalador do Windows foi baixado. Caso a instalação não inicie automaticamente, clique no botão abaixo.'
+                        : 'Toque no botão abaixo para abrir o instalador do Android e concluir o processo.'}
                     </Text>
                   </View>
                 </View>
@@ -482,7 +543,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.primaryButtonText, { color: contrastPrimaryText }]}>
-                        📲 Instalar Atualização
+                        {isDesktop ? '💻 Instalar Atualização (.exe)' : '📲 Instalar APK'}
                       </Text>
                     </TouchableOpacity>
 

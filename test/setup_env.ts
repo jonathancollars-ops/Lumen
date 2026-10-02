@@ -206,11 +206,15 @@ export const mockTauriState: {
   oauthCode: string | null;
   serverStartedPort: number | null;
   openedUrls: string[];
+  desktopInstallerDownloadedUrl: string | null;
+  progressListeners: ((event: any) => void)[];
 } = {
   availablePort: 8080,
   oauthCode: 'mock_tauri_pkce_auth_code_789',
   serverStartedPort: null,
   openedUrls: [],
+  desktopInstallerDownloadedUrl: null,
+  progressListeners: [],
 };
 
 export const resetMockTauriState = () => {
@@ -218,6 +222,8 @@ export const resetMockTauriState = () => {
   mockTauriState.oauthCode = 'mock_tauri_pkce_auth_code_789';
   mockTauriState.serverStartedPort = null;
   mockTauriState.openedUrls = [];
+  mockTauriState.desktopInstallerDownloadedUrl = null;
+  mockTauriState.progressListeners = [];
 };
 
 (globalThis as any).window.__TAURI_INTERNALS__ = {
@@ -232,7 +238,26 @@ export const resetMockTauriState = () => {
       mockTauriState.openedUrls.push(args?.path);
       return null;
     }
+    if (cmd === 'download_and_run_desktop_installer') {
+      mockTauriState.desktopInstallerDownloadedUrl = args?.url || null;
+      // Trigger progress callbacks if registered
+      mockTauriState.progressListeners.forEach((listener) => {
+        listener({
+          event: 'desktop-update-progress',
+          payload: { progress: 0.5, totalBytes: 50000000, downloadedBytes: 25000000 },
+        });
+        listener({
+          event: 'desktop-update-progress',
+          payload: { progress: 1.0, totalBytes: 50000000, downloadedBytes: 50000000 },
+        });
+      });
+      return null;
+    }
     return null;
+  },
+  transformCallback: (callback: any) => {
+    mockTauriState.progressListeners.push(callback);
+    return mockTauriState.progressListeners.length;
   },
 };
 

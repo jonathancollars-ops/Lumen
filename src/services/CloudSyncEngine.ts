@@ -6,6 +6,7 @@ export interface CloudSyncStatus {
   state: 'disconnected' | 'syncing' | 'synced' | 'error';
   message: string;
   lastSyncedAt?: string;
+  isSyncing?: boolean;
 }
 
 export class CloudSyncEngine {

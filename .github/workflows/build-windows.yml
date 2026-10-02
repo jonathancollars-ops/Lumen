@@ -123,6 +123,17 @@ jobs:
             cp -v "src-tauri/target/release/lumen.exe" "build-windows-output/lumen-v${APP_VER}-portable.exe"
           fi
 
+          # Ensure canonical setup names for AppUpdateService priority matching (*-setup.exe and *.msi)
+          SETUP_EXE=$(find build-windows-output -type f -name "*setup.exe" | head -n 1)
+          if [ -n "$SETUP_EXE" ]; then
+            cp -v "$SETUP_EXE" "build-windows-output/lumen-v${APP_VER}-x64-setup.exe"
+          fi
+
+          MSI_FILE=$(find build-windows-output -type f -name "*.msi" | head -n 1)
+          if [ -n "$MSI_FILE" ]; then
+            cp -v "$MSI_FILE" "build-windows-output/lumen-v${APP_VER}-x64.msi"
+          fi
+
           # Verify that artifacts were collected
           if [ -z "$(ls -A build-windows-output 2>/dev/null)" ]; then
             echo "❌ Error: No Windows installers (.exe or .msi) found in src-tauri/target/release/bundle!"
@@ -135,6 +146,7 @@ jobs:
 
           # Calculate SHA-256 Checksums
           cd build-windows-output
+          rm -f SHA256SUMS-windows.txt
           sha256sum * > SHA256SUMS-windows.txt
           echo ""
           echo "🔐 SHA-256 Checksums:"

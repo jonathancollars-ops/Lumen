@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -20,6 +20,20 @@ export class AppUpdateService {
    */
   public static getCurrentVersion(): string {
     return APP_VERSION;
+  }
+
+  /**
+   * Checks whether the app is currently running in a Desktop (Windows/macOS Tauri) environment.
+   */
+  public static isDesktop(): boolean {
+    if (Platform.OS === 'android' || Platform.OS === 'ios') {
+      return false;
+    }
+    return (
+      Platform.OS === 'windows' ||
+      Platform.OS === 'macos' ||
+      (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window)
+    );
   }
 
   /**
@@ -121,16 +135,47 @@ export class AppUpdateService {
         return null;
       }
 
-      // Locate .apk asset in release assets and sanitize its URL
-      let apkDownloadUrl = safeReleaseHtmlUrl;
+      // Locate appropriate installer asset in release assets and sanitize its URL
+      let targetDownloadUrl = safeReleaseHtmlUrl;
       if (Array.isArray(release.assets)) {
-        const apkAsset = release.assets.find((asset: any) =>
-          asset && typeof asset.name === 'string' && asset.name.toLowerCase().endsWith('.apk')
-        );
-        if (apkAsset && typeof apkAsset.browser_download_url === 'string') {
-          const sanitizedApk = SecuritySanitizer.sanitizeUrl(apkAsset.browser_download_url);
-          if (sanitizedApk && sanitizedApk.toLowerCase().endsWith('.apk')) {
-            apkDownloadUrl = sanitizedApk;
+        if (this.isDesktop()) {
+          // Desktop (Windows/Tauri): look for .exe (preferring *-setup.exe) or .msi
+          const exeSetupAsset = release.assets.find((asset: any) =>
+            asset &&
+            typeof asset.name === 'string' &&
+            asset.name.toLowerCase().endsWith('.exe') &&
+            asset.name.toLowerCase().includes('setup')
+          );
+          const exeAsset = release.assets.find((asset: any) =>
+            asset &&
+            typeof asset.name === 'string' &&
+            asset.name.toLowerCase().endsWith('.exe')
+          );
+          const msiAsset = release.assets.find((asset: any) =>
+            asset &&
+            typeof asset.name === 'string' &&
+            asset.name.toLowerCase().endsWith('.msi')
+          );
+          const targetDesktopAsset = exeSetupAsset || exeAsset || msiAsset;
+          if (targetDesktopAsset && typeof targetDesktopAsset.browser_download_url === 'string') {
+            const sanitizedDesktop = SecuritySanitizer.sanitizeUrl(targetDesktopAsset.browser_download_url);
+            if (
+              sanitizedDesktop &&
+              (sanitizedDesktop.toLowerCase().endsWith('.exe') || sanitizedDesktop.toLowerCase().endsWith('.msi'))
+            ) {
+              targetDownloadUrl = sanitizedDesktop;
+            }
+          }
+        } else {
+          // Mobile (Android): locate .apk asset
+          const apkAsset = release.assets.find((asset: any) =>
+            asset && typeof asset.name === 'string' && asset.name.toLowerCase().endsWith('.apk')
+          );
+          if (apkAsset && typeof apkAsset.browser_download_url === 'string') {
+            const sanitizedApk = SecuritySanitizer.sanitizeUrl(apkAsset.browser_download_url);
+            if (sanitizedApk && sanitizedApk.toLowerCase().endsWith('.apk')) {
+              targetDownloadUrl = sanitizedApk;
+            }
           }
         }
       }
@@ -147,7 +192,7 @@ export class AppUpdateService {
         latestVersion: latestVersion,
         releaseName: safeName,
         releaseNotes: safeBody,
-        downloadUrl: apkDownloadUrl,
+        downloadUrl: targetDownloadUrl,
         publishedAt: typeof release.published_at === 'string' ? release.published_at : undefined,
         isMandatory: false
       };
@@ -214,6 +259,93 @@ export class AppUpdateService {
   }
 
   private static activeDownload: FileSystem.DownloadResumable | null = null;
+  private static desktopDownloadCancelled = false;
+
+  /**
+   * Cancels any active desktop update download.
+   */
+  public static cancelDesktopDownload(): void {
+    this.desktopDownloadCancelled = true;
+  }
+
+  /**
+   * Downloads and executes a native Windows desktop updater (.exe or .msi) via Tauri backend.
+   * Listens to 'desktop-update-progress' events and executes the installer when complete.
+   */
+  public static async downloadAndInstallDesktop(
+    downloadUrl: string,
+    onProgress?: (progress: number, totalBytes: number, downloadedBytes: number) => void
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      this.desktopDownloadCancelled = false;
+      const sanitizedUrl = SecuritySanitizer.sanitizeUrl(downloadUrl);
+      if (!sanitizedUrl) {
+        return { success: false, error: 'URL de download inválida ou não fornecida.' };
+      }
+
+      // Se a URL não apontar para um arquivo .exe ou .msi (ex: apenas a página html_url da release), faz fallback para o navegador
+      const isInstallerFile = sanitizedUrl.toLowerCase().endsWith('.exe') || sanitizedUrl.toLowerCase().endsWith('.msi');
+      if (!isInstallerFile) {
+        await this.openDownloadUrl(sanitizedUrl);
+        return {
+          success: false,
+          error: 'Instalador Desktop direto não disponível nesta release. Redirecionando para a página de download no navegador...'
+        };
+      }
+
+      const { listen } = await import('@tauri-apps/api/event');
+      const { invoke } = await import('@tauri-apps/api/core');
+
+      let unlisten: (() => void) | null = null;
+      try {
+        unlisten = await listen<{ progress: number; totalBytes: number; downloadedBytes: number }>(
+          'desktop-update-progress',
+          (event) => {
+            if (this.desktopDownloadCancelled) return;
+            if (onProgress && event?.payload) {
+              onProgress(
+                event.payload.progress ?? 0,
+                event.payload.totalBytes ?? 0,
+                event.payload.downloadedBytes ?? 0
+              );
+            }
+          }
+        );
+
+        await invoke('download_and_run_desktop_installer', { url: sanitizedUrl });
+
+        if (this.desktopDownloadCancelled) {
+          return { success: false, error: 'Download cancelado pelo usuário.' };
+        }
+
+        return { success: true };
+      } finally {
+        if (typeof unlisten === 'function') {
+          unlisten();
+        }
+      }
+    } catch (error: any) {
+      if (this.desktopDownloadCancelled) {
+        return { success: false, error: 'Download cancelado pelo usuário.' };
+      }
+      const errMsg = error?.message || (typeof error === 'string' ? error : 'Falha ao baixar e executar o instalador desktop.');
+      return { success: false, error: errMsg };
+    }
+  }
+
+  public static async cancelDownload(): Promise<void> {
+    try {
+      this.cancelDesktopDownload();
+      if (this.activeDownload) {
+        await this.activeDownload.cancelAsync();
+        this.activeDownload = null;
+      }
+      const fileUri = `${FileSystem.cacheDirectory}lumen-update.apk`;
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+    } catch (error) {
+      console.warn('Erro ao cancelar o download', error);
+    }
+  }
 
   public static async downloadUpdateApk(downloadUrl: string, onProgress: (progress: number, totalBytes: number, downloadedBytes: number) => void): Promise<{ success: boolean; fileUri?: string; error?: string }> {
     const fileUri = `${FileSystem.cacheDirectory}lumen-update.apk`;
@@ -299,18 +431,6 @@ export class AppUpdateService {
     }
   }
 
-  public static async cancelDownload(): Promise<void> {
-    try {
-      if (this.activeDownload) {
-        await this.activeDownload.cancelAsync();
-        this.activeDownload = null;
-      }
-      const fileUri = `${FileSystem.cacheDirectory}lumen-update.apk`;
-      await FileSystem.deleteAsync(fileUri, { idempotent: true });
-    } catch (error) {
-      console.warn('Erro ao cancelar o download', error);
-    }
-  }
 
   public static async installApk(fileUri: string): Promise<{ success: boolean; error?: string }> {
     try {

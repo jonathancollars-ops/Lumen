@@ -1,3 +1,4 @@
+mod desktop_updater;
 mod google_oauth;
 mod oauth_loopback;
 
@@ -13,6 +14,7 @@ pub fn run() {
       google_oauth::stop_google_oauth,
       google_oauth::exchange_google_oauth,
       google_oauth::focus_lumen_window,
+      desktop_updater::download_and_run_desktop_installer,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

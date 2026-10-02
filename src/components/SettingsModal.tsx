@@ -445,12 +445,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Sub tabs */}
-        <View style={styles.subTabs}>
+        {/* Apple HIG Segmented Control SubTabs */}
+        <View style={[styles.subTabs, { backgroundColor: colors.surfaceSubtle, borderColor: colors.specularBorder || (theme !== 'light' ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]}>
           {[
             { id: 'geral', label: '⚙️ Geral' },
+            { id: 'semestres', label: '📅 Semestres' },
             { id: 'ia', label: '✨ IA & Tutor' },
-            { id: 'backup', label: '☁️ Backup & Nuvem' }
+            { id: 'backup', label: '☁️ Nuvem' }
           ].map(t => {
             const isSelected = activeSubTab === t.id;
             return (
@@ -458,10 +459,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 key={t.id}
                 style={[
                   styles.subTab,
-                  isSelected && { borderBottomColor: colors.primary, borderBottomWidth: 3 }
+                  isSelected && [styles.subTabActive, { backgroundColor: colors.surface, borderColor: colors.specularBorder || (theme !== 'light' ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]
                 ]}
                 onPress={() => {
-                  Haptics.selectionAsync();
+                  try { Haptics.selectionAsync(); } catch {}
                   setActiveSubTab(t.id as any);
                 }}
                 activeOpacity={0.7}
@@ -475,6 +476,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       fontSize: 11
                     }
                   ]}
+                  numberOfLines={1}
                 >
                   {t.label}
                 </Text>
@@ -1173,17 +1175,31 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   subTabs: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    padding: 3,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   subTab: {
     flex: 1,
-    paddingVertical: 13,
+    paddingVertical: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+  },
+  subTabActive: {
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
   },
   subTabText: {
-    fontSize: 13,
+    fontSize: 12,
+    letterSpacing: -0.2,
   },
   content: {
     padding: 18,
@@ -1206,17 +1222,17 @@ const getStyles = (colors: any) => StyleSheet.create({
   themeOption: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
   },
   card: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowRadius: 6,
     elevation: 2
   },
   settingRow: {

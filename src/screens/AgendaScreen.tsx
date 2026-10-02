@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import {
   AppEvent,
@@ -437,6 +437,77 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
       )}
     </View>
   );
+
+  const renderDesktopCommandCenter = () => {
+    if (!isDesktop) return null;
+
+    return (
+      <View
+        style={[
+          styles.commandCenterCard,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.specularBorder || (theme !== 'light' ? 'rgba(255, 255, 255, 0.08)' : colors.border),
+            ...(Platform.OS === 'web' ? { backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' } as any : {})
+          }
+        ]}
+      >
+        <View style={styles.commandCenterHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={[styles.commandCenterIconBadge, { backgroundColor: colors.primaryLight }]}>
+              <Text style={{ fontSize: 16 }}>⚡</Text>
+            </View>
+            <View>
+              <Text style={[styles.commandCenterTitle, { color: colors.text }]}>Command Center Acadêmico</Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary }}>macOS Sonoma Academic Hub • Grade Semanal & Foco</Text>
+            </View>
+          </View>
+
+          {onOpenScheduleGrid && (
+            <TouchableOpacity
+              style={[styles.commandCenterActionBtn, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onOpenScheduleGrid();
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 13, marginRight: 6 }}>🗓️</Text>
+              <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 12 }}>Grade Semanal de Matérias ↗</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.commandCenterMetricsGrid}>
+          <View style={[styles.commandCenterMetricTile, { backgroundColor: colors.surfaceSubtle }]}>
+            <Text style={{ fontSize: 18, marginBottom: 2 }}>🕒</Text>
+            <Text style={[styles.commandCenterMetricValue, { color: colors.text }]}>{daySchedule.totalOccupiedFormatted}</Text>
+            <Text style={[styles.commandCenterMetricLabel, { color: colors.textSecondary }]}>Aulas Hoje</Text>
+          </View>
+
+          <View style={[styles.commandCenterMetricTile, { backgroundColor: colors.surfaceSubtle }]}>
+            <Text style={{ fontSize: 18, marginBottom: 2 }}>🟢</Text>
+            <Text style={[styles.commandCenterMetricValue, { color: colors.primary }]}>{daySchedule.totalFreeFormatted}</Text>
+            <Text style={[styles.commandCenterMetricLabel, { color: colors.textSecondary }]}>Janelas Livres</Text>
+          </View>
+
+          <View style={[styles.commandCenterMetricTile, { backgroundColor: colors.surfaceSubtle }]}>
+            <Text style={{ fontSize: 18, marginBottom: 2 }}>📚</Text>
+            <Text style={[styles.commandCenterMetricValue, { color: colors.text }]}>{subjects.filter(s => !s.isArchived).length}</Text>
+            <Text style={[styles.commandCenterMetricLabel, { color: colors.textSecondary }]}>Disciplinas Ativas</Text>
+          </View>
+
+          <View style={[styles.commandCenterMetricTile, { backgroundColor: colors.surfaceSubtle }]}>
+            <Text style={{ fontSize: 18, marginBottom: 2 }}>🎯</Text>
+            <Text style={[styles.commandCenterMetricValue, { color: settings.examWeekMode ? colors.danger : colors.success }]}>
+              {settings.examWeekMode ? 'Modo Provas' : 'Rotina Regular'}
+            </Text>
+            <Text style={[styles.commandCenterMetricLabel, { color: colors.textSecondary }]}>Status Atual</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   const renderNextClassCard = () => (
     <View style={[styles.insetCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1366,19 +1437,22 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
         </View>
 
         {hasWideContent ? (
-          <View style={styles.desktopColumnsContainer}>
-            <View style={styles.desktopLeftColumn}>
-              {renderWeeklyStrip()}
-              {renderDayScheduleCard()}
-              {renderUrgentExamsCard()}
-              {renderPomodoroCard()}
-            </View>
+          <>
+            {renderDesktopCommandCenter()}
+            <View style={styles.desktopColumnsContainer}>
+              <View style={styles.desktopLeftColumn}>
+                {renderWeeklyStrip()}
+                {renderDayScheduleCard()}
+                {renderUrgentExamsCard()}
+                {renderPomodoroCard()}
+              </View>
 
-            <View style={styles.desktopRightColumn}>
-              {renderNextClassCard()}
-              {renderActivitiesCard()}
+              <View style={styles.desktopRightColumn}>
+                {renderNextClassCard()}
+                {renderActivitiesCard()}
+              </View>
             </View>
-          </View>
+          </>
         ) : (
           <>
             {renderWeeklyStrip()}
@@ -2080,6 +2154,68 @@ const getStyles = (colors: any, theme: ThemeType) => StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     marginTop: -2,
+  },
+  commandCenterCard: {
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  commandCenterHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  commandCenterIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandCenterTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  commandCenterActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  commandCenterMetricsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  commandCenterMetricTile: {
+    flex: 1,
+    minWidth: 120,
+    padding: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commandCenterMetricValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginBottom: 2,
+  },
+  commandCenterMetricLabel: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   desktopContainer: {
     maxWidth: 1200,

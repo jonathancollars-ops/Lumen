@@ -144,6 +144,7 @@ jobs:
             
             # Generate SHA-256 Checksum
             cd build-output
+            rm -f SHA256SUMS-android.txt
             sha256sum "lumen-v${APP_VER}-standalone.apk" > SHA256SUMS-android.txt
             echo "APK generated successfully: $TARGET_APK"
             cat SHA256SUMS-android.txt

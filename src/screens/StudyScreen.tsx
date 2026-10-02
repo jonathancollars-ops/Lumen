@@ -52,6 +52,7 @@ export const StudyScreen: React.FC<Props> = ({
 }) => {
   const navigation = useNavigation<any>();
   const colors = getThemeColors(theme);
+  const isDark = theme !== 'light';
   const styles = getStyles(colors);
   const { isDesktop, hasWideContent } = useResponsive();
 
@@ -921,70 +922,214 @@ export const StudyScreen: React.FC<Props> = ({
     </View>
   );
 
-  const renderPomodoroTimerVisualizer = () => (
-    <View style={styles.timerContainer}>
-      <View style={styles.activityRingsWrap}>
-        <View style={[styles.ringOuter, { borderColor: colors.primaryLight }]}>
-          <View style={[
-            styles.ringOuter,
-            {
-              borderColor: isBreak ? colors.success : colors.primary,
-              borderLeftColor: 'transparent',
-              borderBottomColor: 'transparent',
-              transform: [{ rotate: `${Math.min(360, Math.round((( (activeFocusMinutes * 60) - timeLeft ) / Math.max(1, (activeFocusMinutes * 60)) ) * 360))}deg` }]
-            }
-          ]} />
-        </View>
-        <View style={[styles.ringInner, { borderColor: (colors.info ? `${colors.info}25` : 'rgba(59, 130, 246, 0.2)') }]}>
-          <View style={[
-            styles.ringInner,
-            {
-              borderColor: colors.info || '#3B82F6',
-              borderTopColor: 'transparent',
-              borderRightColor: 'transparent'
-            }
-          ]} />
-        </View>
+  const renderPomodoroTimerVisualizer = () => {
+    const totalDurationSeconds = Math.max(1, (activeFocusMinutes || focusMinutesDefault) * 60);
+    const progressFrac = Math.min(1, Math.max(0, (totalDurationSeconds - timeLeft) / totalDurationSeconds));
+    const rotationDeg = Math.round(progressFrac * 360);
 
-        <View style={styles.ringCenter}>
-          <View style={[
-            styles.statePill,
-            {
-              backgroundColor: isBreak ? colors.successLight : colors.primaryLight,
-              borderColor: isBreak ? colors.success : colors.primary
-            }
-          ]}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: isBreak ? colors.success : colors.primary }}>
-              {isBreak ? `☕ Descanso` : `🎯 Foco Total`}
+    return (
+      <View style={styles.timerContainer}>
+        {/* Anel de foco circular Pomodoro com gradiente sutil violeta/azul e tipografia numérica grande */}
+        <View style={styles.activityRingsWrap}>
+          {/* Outer Halo Track (Violeta / Azul Suave) */}
+          <View style={[styles.ringHaloBg, { borderColor: isDark ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.10)' }]} />
+
+          {/* Outer Ring com rotação de progresso */}
+          <View style={[styles.ringOuter, { borderColor: isDark ? 'rgba(139, 92, 246, 0.20)' : 'rgba(59, 130, 246, 0.15)' }]}>
+            <View
+              style={[
+                styles.ringOuter,
+                {
+                  borderColor: isBreak ? colors.success : (isDark ? '#818CF8' : '#6366F1'),
+                  borderLeftColor: 'transparent',
+                  borderBottomColor: 'transparent',
+                  transform: [{ rotate: `${rotationDeg}deg` }]
+                }
+              ]}
+            />
+          </View>
+
+          {/* Inner Accent Ring (Azul Luminoso) */}
+          <View style={[styles.ringInner, { borderColor: isDark ? 'rgba(59, 130, 246, 0.18)' : 'rgba(59, 130, 246, 0.12)' }]}>
+            <View
+              style={[
+                styles.ringInner,
+                {
+                  borderColor: isBreak ? (colors.successDark || '#059669') : '#38BDF8',
+                  borderTopColor: 'transparent',
+                  borderRightColor: 'transparent',
+                  transform: [{ rotate: `${(rotationDeg * 0.75) % 360}deg` }]
+                }
+              ]}
+            />
+          </View>
+
+          <View style={styles.ringCenter}>
+            <View
+              style={[
+                styles.statePill,
+                {
+                  backgroundColor: isBreak ? colors.successLight : (isDark ? 'rgba(99, 102, 241, 0.18)' : 'rgba(99, 102, 241, 0.12)'),
+                  borderColor: isBreak ? colors.success : (isDark ? 'rgba(129, 140, 248, 0.4)' : '#6366F1')
+                }
+              ]}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '800',
+                  color: isBreak ? colors.success : (isDark ? '#C7D2FE' : '#4F46E5')
+                }}
+              >
+                {isBreak ? `☕ Descanso` : `🎯 Foco Total`}
+              </Text>
+            </View>
+            <Text style={[styles.timerText, { color: colors.text }]}>{formatTime(timeLeft)}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
+              {activeFocusMinutes} min • {isBreak ? 'Pausa' : 'Imersão'}
             </Text>
           </View>
-          <Text style={[styles.timerText, { color: colors.text }]}>{formatTime(timeLeft)}</Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>
-            {activeFocusMinutes} min
-          </Text>
+        </View>
+
+        {/* Botões arredondados com toque háptico Haptics.selectionAsync */}
+        <View style={styles.timerControls}>
+          <TouchableOpacity
+            style={[
+              styles.timerButton,
+              {
+                backgroundColor: isBreak ? colors.success : (isDark ? '#6366F1' : colors.primary),
+                shadowColor: isBreak ? colors.success : '#6366F1',
+                shadowOpacity: isActive ? 0.35 : 0.15,
+                shadowOffset: { width: 0, height: 4 },
+                shadowRadius: 10,
+              }
+            ]}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              toggleTimer();
+            }}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.timerButtonText,
+                { color: getContrastTextColor(isBreak ? colors.success : (isDark ? '#6366F1' : colors.primary)) }
+              ]}
+            >
+              {isActive ? '⏸️ Pausar' : '▶️ Iniciar Foco'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.timerButton,
+              {
+                backgroundColor: colors.surfaceSubtle,
+                borderWidth: 1,
+                borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border)
+              }
+            ]}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              resetTimer();
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.timerButtonText, { color: colors.text }]}>🔄 Resetar</Text>
+          </TouchableOpacity>
         </View>
       </View>
+    );
+  };
 
-      <View style={styles.timerControls}>
-        <TouchableOpacity
-          style={[styles.timerButton, { backgroundColor: colors.primary }]}
-          onPress={toggleTimer}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.timerButtonText, { color: getContrastTextColor(colors.primary) }]}>
-            {isActive ? '⏸️ Pausar' : '▶️ Iniciar Foco'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.timerButton, { backgroundColor: colors.surfaceSubtle, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
-          onPress={resetTimer}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.timerButtonText, { color: colors.text }]}>🔄 Resetar</Text>
-        </TouchableOpacity>
+  /**
+   * Cards Gêmeos de Métricas Acadêmicas:
+   * Velocímetro semicircular de Presença Segura (94%) e Coeficiente de Rendimento (CR 8.8)
+   */
+  const renderTwinMetricCards = () => {
+    return (
+      <View style={styles.twinMetricsRow}>
+        {/* Card 1: Velocímetro de Presença Segura (94%) */}
+        <View style={[styles.metricCard, { backgroundColor: colors.surface, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]}>
+          <View style={styles.metricHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 15 }}>🛡️</Text>
+              <Text style={[styles.metricCardTitle, { color: colors.text }]}>Presença Segura</Text>
+            </View>
+            <View style={[styles.metricBadge, { backgroundColor: colors.successLight, borderColor: colors.success }]}>
+              <Text style={[styles.metricBadgeText, { color: colors.successDark }]}>94%</Text>
+            </View>
+          </View>
+
+          {/* Velocímetro semicircular Apple HIG */}
+          <View style={styles.gaugeContainer}>
+            <View style={styles.gaugeHalfWrap}>
+              <View style={[styles.gaugeTrack, { borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)' }]} />
+              <View
+                style={[
+                  styles.gaugeFill,
+                  {
+                    borderColor: colors.success,
+                    transform: [{ rotate: '45deg' }]
+                  }
+                ]}
+              />
+            </View>
+            <View style={styles.gaugeCenterTextWrap}>
+              <Text style={[styles.gaugeValueText, { color: colors.text }]}>94%</Text>
+              <Text style={[styles.gaugeSubText, { color: colors.textSecondary }]}>Limite: 75%</Text>
+            </View>
+          </View>
+
+          <View style={styles.metricFooterRow}>
+            <View style={[styles.metricStatusDot, { backgroundColor: colors.success }]} />
+            <Text style={[styles.metricFooterText, { color: colors.textSecondary }]}>
+              Status Seguro (+19% margem)
+            </Text>
+          </View>
+        </View>
+
+        {/* Card 2: Velocímetro de Coeficiente de Rendimento (CR 8.8) */}
+        <View style={[styles.metricCard, { backgroundColor: colors.surface, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]}>
+          <View style={styles.metricHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 15 }}>📈</Text>
+              <Text style={[styles.metricCardTitle, { color: colors.text }]}>Rendimento (CR)</Text>
+            </View>
+            <View style={[styles.metricBadge, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : 'rgba(139, 92, 246, 0.10)', borderColor: isDark ? '#A78BFA' : '#7C3AED' }]}>
+              <Text style={[styles.metricBadgeText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>CR 8.8</Text>
+            </View>
+          </View>
+
+          {/* Velocímetro semicircular Apple HIG */}
+          <View style={styles.gaugeContainer}>
+            <View style={styles.gaugeHalfWrap}>
+              <View style={[styles.gaugeTrack, { borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)' }]} />
+              <View
+                style={[
+                  styles.gaugeFill,
+                  {
+                    borderColor: isDark ? '#A78BFA' : '#7C3AED',
+                    transform: [{ rotate: '35deg' }]
+                  }
+                ]}
+              />
+            </View>
+            <View style={styles.gaugeCenterTextWrap}>
+              <Text style={[styles.gaugeValueText, { color: colors.text }]}>CR 8.8</Text>
+              <Text style={[styles.gaugeSubText, { color: colors.textSecondary }]}>Média Geral</Text>
+            </View>
+          </View>
+
+          <View style={styles.metricFooterRow}>
+            <View style={[styles.metricStatusDot, { backgroundColor: isDark ? '#A78BFA' : '#7C3AED' }]} />
+            <Text style={[styles.metricFooterText, { color: colors.textSecondary }]}>
+              Alto Desempenho
+            </Text>
+          </View>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderDailyOverview = () => (
     <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -1430,15 +1575,16 @@ export const StudyScreen: React.FC<Props> = ({
           {hasWideContent ? (
             <View style={styles.desktopColumnsContainer}>
               <View style={styles.desktopLeftColumn}>
-                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]}>
                   <Text style={[styles.cardTitle, { color: colors.text }]}>Temporizador Pomodoro</Text>
                   {renderPomodoroTimerVisualizer()}
                 </View>
+                {renderTwinMetricCards()}
               </View>
 
               <View style={styles.desktopRightColumn}>
                 {renderSubjectSelector(selectedSubjectId, setSelectedSubjectId, 'Matéria em Foco')}
-                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]}>
                   {renderPomodoroPresets()}
                 </View>
                 {renderDailyOverview()}
@@ -1447,10 +1593,11 @@ export const StudyScreen: React.FC<Props> = ({
           ) : (
             <>
               {renderSubjectSelector(selectedSubjectId, setSelectedSubjectId, 'Matéria em Foco')}
-              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border) }]}>
                 {renderPomodoroPresets()}
                 {renderPomodoroTimerVisualizer()}
               </View>
+              {renderTwinMetricCards()}
               {renderDailyOverview()}
             </>
           )}
@@ -1585,12 +1732,19 @@ const getStyles = (colors: any) => StyleSheet.create({
   timerContainer: { alignItems: 'center', paddingVertical: 10 },
   // Activity Rings
   activityRingsWrap: {
-    width: 210,
-    height: 210,
+    width: 226,
+    height: 226,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
     marginTop: 8,
+  },
+  ringHaloBg: {
+    position: 'absolute',
+    width: 226,
+    height: 226,
+    borderRadius: 113,
+    borderWidth: 1,
   },
   ringOuter: {
     position: 'absolute',
@@ -1614,10 +1768,115 @@ const getStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  timerText: { fontSize: 44, fontWeight: '700', marginBottom: 4, fontVariant: ['tabular-nums'], letterSpacing: -1 },
+  timerText: { fontSize: 52, fontWeight: '800', marginBottom: 4, fontVariant: ['tabular-nums'], letterSpacing: -1.5 },
   timerControls: { flexDirection: 'row', justifyContent: 'center', gap: 12, width: '100%', marginTop: 8 },
   timerButton: { flex: 1, paddingVertical: 14, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   timerButtonText: { fontSize: 14, fontWeight: '700' },
+
+  // Twin Metric Cards (Presença Segura & CR)
+  twinMetricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  metricCard: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  metricHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  metricCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  metricBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  metricBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  gaugeContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 72,
+    marginVertical: 4,
+    position: 'relative',
+  },
+  gaugeHalfWrap: {
+    width: 104,
+    height: 52,
+    overflow: 'hidden',
+    position: 'absolute',
+    top: 4,
+  },
+  gaugeTrack: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 9,
+    borderBottomColor: 'transparent',
+    borderLeftColor: 'transparent',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    transform: [{ rotate: '-45deg' }],
+  },
+  gaugeFill: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 9,
+    borderBottomColor: 'transparent',
+    borderLeftColor: 'transparent',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  gaugeCenterTextWrap: {
+    position: 'absolute',
+    bottom: 2,
+    alignItems: 'center',
+  },
+  gaugeValueText: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  gaugeSubText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  metricFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  metricStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  metricFooterText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   statRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1 },
   addTaskContainer: {
     padding: 16,

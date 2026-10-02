@@ -241,7 +241,7 @@ export class SecuritySanitizer {
     }
     const trimmed = url.trim();
     // Allow only http:// and https:// URLs without control characters or HTML/quotes
-    if (!/^https?:\/\/[^\s"'<>]+$/i.test(trimmed)) {
+    if (!/^https?:\/\/[^\s"'<>\x00-\x1F\x7F]+$/i.test(trimmed)) {
       return '';
     }
     return trimmed;

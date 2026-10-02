@@ -34,6 +34,9 @@ export const Colors = {
     glassBackground: 'rgba(255, 255, 255, 0.92)',
     specularBorder: 'rgba(0, 0, 0, 0.08)',
     hairlineBorder: 'rgba(0, 0, 0, 0.06)',
+    frostedCard: 'rgba(255, 255, 255, 0.85)',
+    obsidianBackground: '#F8F9FA',
+    midnightBackground: '#F1F3F5',
   },
   dark: {
     background: '#0F1115',
@@ -61,13 +64,16 @@ export const Colors = {
     info: '#60A5FA',
     card: '#181B20',
     shadow: 'rgba(0, 0, 0, 0.4)',
-    // Apple HIG Semantic Tokens
+    // Apple HIG Semantic Tokens & Midnight Obsidian
     systemBackground: '#000000',
     secondarySystemBackground: '#1C1C1E',
     tertiarySystemBackground: '#2C2C2E',
-    glassBackground: 'rgba(24, 27, 32, 0.92)',
-    specularBorder: 'rgba(255, 255, 255, 0.12)',
+    glassBackground: 'rgba(15, 17, 25, 0.85)',
+    specularBorder: 'rgba(255, 255, 255, 0.08)',
     hairlineBorder: 'rgba(255, 255, 255, 0.08)',
+    frostedCard: 'rgba(22, 27, 38, 0.75)',
+    obsidianBackground: '#090C15',
+    midnightBackground: '#0B0F19',
   },
   amoled: {
     background: '#000000',
@@ -95,14 +101,34 @@ export const Colors = {
     info: '#60A5FA',
     card: '#0A0C0E',
     shadow: 'rgba(0, 0, 0, 0.6)',
-    // Apple HIG Semantic Tokens
+    // Apple HIG Semantic Tokens & Midnight Obsidian
     systemBackground: '#000000',
     secondarySystemBackground: '#0B0D10',
     tertiarySystemBackground: '#16191E',
-    glassBackground: 'rgba(10, 12, 14, 0.94)',
-    specularBorder: 'rgba(255, 255, 255, 0.14)',
+    glassBackground: 'rgba(0, 0, 0, 0.90)',
+    specularBorder: 'rgba(255, 255, 255, 0.08)',
     hairlineBorder: 'rgba(255, 255, 255, 0.08)',
+    frostedCard: '#000000',
+    obsidianBackground: '#000000',
+    midnightBackground: '#000000',
   }
+};
+
+/**
+ * Midnight Obsidian Tokens - Apple HIG & Impeccable Design Standard
+ */
+export const MidnightObsidian = {
+  background: '#090C15',
+  midnightBackground: '#0B0F19',
+  cardDark: 'rgba(22, 27, 38, 0.75)',
+  cardAmoled: '#000000',
+  specularBorder: 'rgba(255, 255, 255, 0.08)',
+  hairlineBorder: 'rgba(255, 255, 255, 0.08)',
+  radius: {
+    squircleSmall: 16,
+    squircle: 20,
+    squircleLarge: 22,
+  },
 };
 
 export const AppleTokens = {
@@ -122,6 +148,8 @@ export const AppleTokens = {
   radius: {
     card: 20,
     squircle: 20,
+    squircleSmall: 16,
+    squircleLarge: 22,
     cardInner: 14,
     pill: 999,
     button: 12,

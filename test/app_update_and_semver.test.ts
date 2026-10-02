@@ -1,6 +1,7 @@
 import './setup_env';
 import { parseSemver, compareSemver, isNewerVersion, bumpVersion, APP_VERSION } from '../src/utils/version';
 import { AppUpdateService } from '../src/services/AppUpdateService';
+import { SecuritySanitizer } from '../src/services/SecuritySanitizer';
 import { AppUpdateInfo, VersionBumpType } from '../src/types';
 
 let totalTests = 0;
@@ -149,8 +150,17 @@ async function runSemverAndAutoUpdateTests() {
     const state = await AppUpdateService.getUpdateState();
     assertEqual(state.ignoredVersion, '3.7.6', 'Ignored version persisted correctly');
 
+    // Prompt cooldown checks
+    await AppUpdateService.saveUpdateState({ lastPromptDismissedAt: undefined });
+    const canPromptInitial = await AppUpdateService.shouldShowAutomaticPrompt();
+    assert(canPromptInitial, 'shouldShowAutomaticPrompt returns true when no prompt has been dismissed');
+
+    await AppUpdateService.recordPromptDismissed();
+    const canPromptDismissed = await AppUpdateService.shouldShowAutomaticPrompt();
+    assert(!canPromptDismissed, 'shouldShowAutomaticPrompt returns false immediately after recordPromptDismissed');
+
     // Reset state
-    await AppUpdateService.saveUpdateState({ ignoredVersion: undefined, lastCheckedAt: undefined });
+    await AppUpdateService.saveUpdateState({ ignoredVersion: undefined, lastCheckedAt: undefined, lastPromptDismissedAt: undefined });
     const resetState = await AppUpdateService.getUpdateState();
     assert(resetState.ignoredVersion === undefined, 'State reset safely');
   }
@@ -161,6 +171,21 @@ async function runSemverAndAutoUpdateTests() {
     // Calling openDownloadUrl with empty or invalid url returns false without crash
     const resEmpty = await AppUpdateService.openDownloadUrl('');
     assertEqual(resEmpty, false, 'openDownloadUrl with empty string returns false safely');
+
+    const resMalicious = await AppUpdateService.openDownloadUrl("javascript:alert('xss')");
+    assertEqual(resMalicious, false, 'openDownloadUrl with javascript scheme returns false safely');
+
+    const resFile = await AppUpdateService.openDownloadUrl('file:///etc/passwd');
+    assertEqual(resFile, false, 'openDownloadUrl with file scheme returns false safely');
+
+    // Sanitizer directly protects URLs
+    assertEqual(SecuritySanitizer.sanitizeUrl('javascript:void(0)'), '', 'SecuritySanitizer blocks javascript');
+    assertEqual(SecuritySanitizer.sanitizeUrl('file:///c:/passwords.txt'), '', 'SecuritySanitizer blocks file');
+    assertEqual(
+      SecuritySanitizer.sanitizeUrl('https://github.com/organiza/lumen.apk'),
+      'https://github.com/organiza/lumen.apk',
+      'SecuritySanitizer preserves valid HTTPS APK url'
+    );
   }
 
   console.log('\n================================================================');
