@@ -321,7 +321,14 @@ export class AppUpdateService {
         return { success: true };
       } finally {
         if (typeof unlisten === 'function') {
-          unlisten();
+          try {
+            const res: any = unlisten();
+            if (res && typeof res.catch === 'function') {
+              res.catch(() => {});
+            }
+          } catch {
+            // Defensively swallow unlisten errors in test or teardown contexts
+          }
         }
       }
     } catch (error: any) {

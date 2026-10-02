@@ -226,6 +226,10 @@ export const resetMockTauriState = () => {
   mockTauriState.progressListeners = [];
 };
 
+(globalThis as any).window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+  unregisterListener: (_event: string, _eventId: number) => {},
+};
+
 (globalThis as any).window.__TAURI_INTERNALS__ = {
   invoke: async (cmd: string, args?: any) => {
     if (cmd === 'get_available_port') return mockTauriState.availablePort;
@@ -251,6 +255,12 @@ export const resetMockTauriState = () => {
           payload: { progress: 1.0, totalBytes: 50000000, downloadedBytes: 50000000 },
         });
       });
+      return null;
+    }
+    if (cmd === 'plugin:event|listen') {
+      return 1;
+    }
+    if (cmd === 'plugin:event|unlisten') {
       return null;
     }
     return null;
