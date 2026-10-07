@@ -265,6 +265,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSavedTimer(TimerService.fromActiveTimerState(effectiveTimer));
       }
       setActiveTimer(effectiveTimer);
+      void NotificationService.refreshMonthlyNotifications(safeEvents, safeSubjects)
+        .catch(error => console.warn('Erro ao renovar alertas mensais:', error));
     } catch (err) {
       console.error('Error loading app data in AppContext:', err);
     } finally {
@@ -314,7 +316,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cloudEngineRef.current = engine;
       engine.start();
     });
-    const resume = () => cloudEngineRef.current?.schedule(0);
+    const resume = () => {
+      void reloadRef.current().then(() => {
+        if (mounted) cloudEngineRef.current?.schedule(0);
+      });
+    };
     const appState = AppState.addEventListener('change', state => { if (state === 'active') resume(); });
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.addEventListener('online', resume);

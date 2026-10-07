@@ -46,53 +46,58 @@ export const AttendanceService = {
         const startDate = new Date(`${dateClean}T12:00:00`);
         if (isNaN(startDate.getTime())) continue;
 
-        const targetDayOfWeek = startDate.getDay();
+        const recurrenceDays = Array.isArray(event.recurrenceDays)
+          ? [...new Set(event.recurrenceDays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6))]
+          : [];
+        const targetDays = recurrenceDays.length > 0 ? recurrenceDays : [startDate.getDay()];
 
-        // Align cursor to the exact first occurrence of targetDayOfWeek on or after startDate
-        const cursorDate = new Date(startDate);
-        const dayDiff = (targetDayOfWeek - cursorDate.getDay() + 7) % 7;
-        cursorDate.setDate(cursorDate.getDate() + dayDiff);
+        for (const targetDayOfWeek of targetDays) {
+          // Align each weekday to its first occurrence on or after the start date.
+          const cursorDate = new Date(startDate);
+          const dayDiff = (targetDayOfWeek - cursorDate.getDay() + 7) % 7;
+          cursorDate.setDate(cursorDate.getDate() + dayDiff);
 
-        // Step by 7 days directly with safety loop counter (max 520 weeks / 10 years)
-        let loopSafety = 0;
-        const MAX_WEEKS = 520;
+          // Step by 7 days directly with safety loop counter (max 520 weeks / 10 years)
+          let loopSafety = 0;
+          const MAX_WEEKS = 520;
 
-        while (cursorDate <= today && loopSafety < MAX_WEEKS) {
-          loopSafety++;
-          const dateStr = getLocalDateString(cursorDate);
+          while (getLocalDateString(cursorDate) <= todayStr && loopSafety < MAX_WEEKS) {
+            loopSafety++;
+            const dateStr = getLocalDateString(cursorDate);
 
-          // Check if class has finished
-          let isPast = false;
-          if (dateStr < todayStr) {
-            isPast = true;
-          } else if (dateStr === todayStr) {
-            const endTimeStr = typeof event.endTime === 'string' && event.endTime.includes(':')
-              ? event.endTime
-              : '23:59';
-            const parts = endTimeStr.split(':').map(Number);
-            const endH = Number.isFinite(parts[0]) ? parts[0] : 23;
-            const endM = Number.isFinite(parts[1]) ? parts[1] : 59;
-            if (endH * 60 + endM < currentMins) {
+            // Check if class has finished
+            let isPast = false;
+            if (dateStr < todayStr) {
               isPast = true;
+            } else if (dateStr === todayStr) {
+              const endTimeStr = typeof event.endTime === 'string' && event.endTime.includes(':')
+                ? event.endTime
+                : '23:59';
+              const parts = endTimeStr.split(':').map(Number);
+              const endH = Number.isFinite(parts[0]) ? parts[0] : 23;
+              const endM = Number.isFinite(parts[1]) ? parts[1] : 59;
+              if (endH * 60 + endM < currentMins) {
+                isPast = true;
+              }
             }
-          }
 
-          if (isPast) {
-            const key = `${event.id}:${dateStr}`;
-            if (!existingSet.has(key)) {
-              existingSet.add(key); // prevent duplicates in the same pass
-              newRecords.push({
-                id: generateId('att'),
-                subjectId: event.subjectId,
-                eventId: event.id,
-                date: dateStr,
-                status: 'pending'
-              });
+            if (isPast) {
+              const key = `${event.id}:${dateStr}`;
+              if (!existingSet.has(key)) {
+                existingSet.add(key); // prevent duplicates in the same pass
+                newRecords.push({
+                  id: generateId('att'),
+                  subjectId: event.subjectId,
+                  eventId: event.id,
+                  date: dateStr,
+                  status: 'pending'
+                });
+              }
             }
-          }
 
-          // Advance exactly 1 week (7 days)
-          cursorDate.setDate(cursorDate.getDate() + 7);
+            // Advance exactly 1 week (7 days)
+            cursorDate.setDate(cursorDate.getDate() + 7);
+          }
         }
       }
 

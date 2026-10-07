@@ -223,14 +223,12 @@ export class CourseCRService {
     const historicalCR = this.calculateHistoricalCR(safeData);
 
     let pastCredits = 0;
-    let pastWeightedSum = 0;
 
     safeData.semesters.forEach(sem => {
       if (sem && Array.isArray(sem.subjects)) {
         sem.subjects.forEach(sub => {
           if (sub && sub.isCompleted && typeof sub.grade === 'number' && !isNaN(sub.grade)) {
             const credits = sub.credits > 0 ? sub.credits : 4;
-            pastWeightedSum += sub.grade * credits;
             pastCredits += credits;
           }
         });
@@ -238,9 +236,9 @@ export class CourseCRService {
     });
 
     if (pastCredits === 0) {
-      pastCredits = safeData.completedCredits || 40;
-      pastWeightedSum = historicalCR * pastCredits;
+      pastCredits = Math.max(0, safeData.completedCredits || 0);
     }
+    const pastWeightedSum = historicalCR * pastCredits;
 
     // Evaluate current semester subjects
     let currentSemesterCredits = 0;
@@ -252,21 +250,33 @@ export class CourseCRService {
 
     safeSubjects.forEach(sub => {
       if (sub) {
-        const credits = sub.workloadHours ? Math.round(sub.workloadHours / 20) : 4;
+        const credits = sub.workloadHours && sub.workloadHours > 0
+          ? Math.max(1, Math.round(sub.workloadHours / 15)) : 4;
         currentSemesterCredits += credits;
 
-        if (sub.gradeGroups && sub.gradeGroups.length > 0) {
-          const calc = calculateFinalGrade(sub.gradeGroups, sub.passGrade || 7.0);
+        const gradeGroups = sub.gradeGroups;
+        if (gradeGroups && gradeGroups.length > 0) {
+          const calc = calculateFinalGrade(gradeGroups, sub.passGrade || 7.0);
           const currentScore = typeof calc.score === 'number' && !isNaN(calc.score) ? calc.score : (sub.passGrade || 7.0);
           
           currentSemesterEstimatedSum += currentScore * credits;
-          currentSemesterWorstSum += (calc.hasMissingItems ? currentScore * 0.7 : currentScore) * credits;
-          currentSemesterBestSum += 10.0 * credits;
+          // Project only pending evaluations, preserving entered grades and weights.
+          const projectedScore = (pendingScore: number): number => calculateFinalGrade(
+            gradeGroups.filter(Boolean).map(group => ({
+              ...group,
+              items: (Array.isArray(group.items) ? group.items : []).filter(Boolean).map(item => ({
+                ...item,
+                grade: Number.isFinite(item.grade) ? item.grade
+                  : pendingScore * (Number.isFinite(item.maxGrade) && item.maxGrade > 0 ? item.maxGrade : 10) / 10,
+              })),
+            })), sub.passGrade || 7.0,
+          ).score;
+          currentSemesterWorstSum += projectedScore(0) * credits;
+          currentSemesterBestSum += projectedScore(10) * credits;
         } else {
           // No grades entered yet
           const fallback = typeof sub.passGrade === 'number' ? sub.passGrade : 7.0;
           currentSemesterEstimatedSum += fallback * credits;
-          currentSemesterWorstSum += (fallback * 0.5) * credits;
           currentSemesterBestSum += 10.0 * credits;
         }
       }
@@ -587,9 +597,13 @@ export class CourseCRService {
         : passGrade;
 
       let finalGrade = targetPassGrade;
+      let passingScore = targetPassGrade;
+      let usedFinal = false;
       if (sub.gradeGroups && sub.gradeGroups.length > 0) {
         const calc = calculateFinalGrade(sub.gradeGroups, targetPassGrade);
+        usedFinal = calc.usedFinal;
         if (typeof calc.score === 'number' && !isNaN(calc.score)) {
+          passingScore = calc.score;
           finalGrade = Number(calc.score.toFixed(1));
         }
       }
@@ -601,7 +615,7 @@ export class CourseCRService {
         ? sub.workloadHours
         : credits * 15;
 
-      const isCompleted = finalGrade >= targetPassGrade;
+      const isCompleted = passingScore >= (usedFinal ? 5.0 : targetPassGrade);
 
       return {
         id: sub.id || generateId('flow'),
@@ -712,7 +726,7 @@ export class CourseCRService {
     const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
     const updatedSemesters = base.semesters.map(sem => ({
       ...sem,
-      subjects: [...(sem.subjects || [])]
+      subjects: (sem.subjects || []).map(sub => ({ ...sub }))
     }));
 
     let extractedCR: number | undefined;
@@ -808,7 +822,7 @@ export class CourseCRService {
         .replace(/MAT\d+|FIS\d+|CC\d+|ENG\d+|[A-Z]{2,4}\d{3,4}/g, '')
         .replace(/\b\d+\s*(h|horas|ch|cr|créditos)\b/gi, '')
         .replace(/aprovado|aprovada|concluído|concluída|reprovado|reprovada|trancado|isento/gi, '')
-        .replace(/[0-9.,]+/g, '')
+        .replace(/\b\d+[.,]\d+\b/g, '')
         .replace(/[-|–:()]/g, '')
         .trim();
 
@@ -1006,7 +1020,7 @@ export class CourseCRService {
 
     const updatedSemesters: CourseSemester[] = base.semesters.map(sem => ({
       ...sem,
-      subjects: [...(sem.subjects || [])]
+      subjects: (sem.subjects || []).map(sub => ({ ...sub }))
     }));
 
     const rawList = (Array.isArray(aiResult?.subjects) && aiResult.subjects.length > 0)

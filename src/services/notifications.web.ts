@@ -64,6 +64,10 @@ export const NotificationService = {
     }
   },
 
+  async refreshMonthlyNotifications(_events: AppEvent[], _subjects: Subject[]): Promise<void> {
+    // Calendar alerts are scheduled by the native service.
+  },
+
   async cancelSubjectNotifications(subjectId: string, eventIds?: string[]): Promise<void> {
     if (!subjectId && (!eventIds || eventIds.length === 0)) return;
     if (Array.isArray(eventIds)) {

@@ -160,6 +160,7 @@ export const mockNotifications = {
   SchedulableTriggerInputTypes: {
     DAILY: 'daily',
     WEEKLY: 'weekly',
+    MONTHLY: 'monthly',
     DATE: 'date',
   },
 };
