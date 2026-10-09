@@ -285,7 +285,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     if (status === 'downloading') {
       await AppUpdateService.cancelDownload();
     }
-    await AppUpdateService.ignoreVersion(updateInfo.latestVersion);
+    await AppUpdateService.recordPromptDismissed(updateInfo.latestVersion);
     onClose();
   };
 

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { AppUpdateInfo, AppUpdateState } from '../types';
-import { APP_VERSION, isNewerVersion, parseSemver } from '../utils/version';
+import { APP_VERSION, compareSemver, isNewerVersion } from '../utils/version';
 import { SecuritySanitizer } from './SecuritySanitizer';
 
 const GITHUB_REPO_OWNER = 'jonathancollars-ops';
@@ -85,9 +85,6 @@ export class AppUpdateService {
         return null;
       }
 
-      // Record check timestamp
-      await this.saveUpdateState({ lastCheckedAt: now });
-
       const controller = new AbortController();
       timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -104,7 +101,7 @@ export class AppUpdateService {
         return null;
       }
 
-      const release = await response.json();
+      let release = await response.json();
       if (!release || typeof release !== 'object' || !release.tag_name || typeof release.tag_name !== 'string') {
         return null;
       }
@@ -115,73 +112,75 @@ export class AppUpdateService {
         return null;
       }
 
+      const installerUrl = (candidate: any): string => {
+        if (!Array.isArray(candidate?.assets)) return '';
+        const assets = candidate.assets.filter((asset: any) => asset && typeof asset.name === 'string' &&
+          typeof asset.browser_download_url === 'string' && !/portable/i.test(asset.name));
+        const preferred = this.isDesktop()
+          ? [assets.find((asset: any) => /setup\.exe$/i.test(asset.name)),
+             assets.find((asset: any) => /\.msi$/i.test(asset.name)),
+             assets.find((asset: any) => /\.exe$/i.test(asset.name))]
+          : [assets.find((asset: any) => /\.apk$/i.test(asset.name))];
+        for (const asset of preferred) {
+          const url = SecuritySanitizer.sanitizeUrl(asset?.browser_download_url);
+          if (url && (this.isDesktop() ? /\.(exe|msi)$/i.test(url) : /\.apk$/i.test(url))) return url;
+        }
+        return '';
+      };
+
+      // Android and Windows builds may finish at different times. Find the
+      // newest compatible release if /latest has only the other platform.
+      if (isNewerVersion(latestVersion, APP_VERSION) && !installerUrl(release)) {
+        try {
+          const listResponse = await fetch(GITHUB_RELEASES_URL.replace('/latest', '?per_page=30'), {
+            headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'Lumen-App-Client' },
+            signal: controller.signal,
+          });
+          if (listResponse.ok) {
+            const candidates = await listResponse.json();
+            if (Array.isArray(candidates)) {
+              const compatible = candidates.filter(candidate => candidate && !candidate.draft && !candidate.prerelease &&
+                typeof candidate.tag_name === 'string' && isNewerVersion(candidate.tag_name, APP_VERSION) && installerUrl(candidate))
+                .sort((a, b) => compareSemver(b.tag_name, a.tag_name));
+              if (compatible.length) release = compatible[0];
+            }
+          }
+        } catch {
+          // A manual check can still offer the release page if the list fails.
+        }
+      }
+      const resolvedVersion = release.tag_name.trim().replace(/^refs\/tags\//i, '').replace(/^v/i, '');
+
       // Check if remote version is strictly newer than current app version
-      const hasUpdate = isNewerVersion(latestVersion, APP_VERSION);
+      const hasUpdate = isNewerVersion(resolvedVersion, APP_VERSION);
       
       // Sanitize release page URL
       const safeReleaseHtmlUrl = SecuritySanitizer.sanitizeUrl(release.html_url);
 
       if (!hasUpdate) {
+        await this.saveUpdateState({ lastCheckedAt: now });
         return {
           hasUpdate: false,
           currentVersion: APP_VERSION,
-          latestVersion: latestVersion,
+          latestVersion: resolvedVersion,
           downloadUrl: safeReleaseHtmlUrl
         };
       }
 
       // Check if user chose to ignore this specific version (unless manual force check)
-      if (!force && state?.ignoredVersion === latestVersion) {
+      if (!force && state?.ignoredVersion === resolvedVersion) {
+        await this.saveUpdateState({ lastCheckedAt: now });
         return null;
       }
 
-      // Locate appropriate installer asset in release assets and sanitize its URL
-      let targetDownloadUrl = safeReleaseHtmlUrl;
-      if (Array.isArray(release.assets)) {
-        if (this.isDesktop()) {
-          // Desktop (Windows/Tauri): look for .exe (preferring *-setup.exe) or .msi
-          const exeSetupAsset = release.assets.find((asset: any) =>
-            asset &&
-            typeof asset.name === 'string' &&
-            asset.name.toLowerCase().endsWith('.exe') &&
-            asset.name.toLowerCase().includes('setup')
-          );
-          const exeAsset = release.assets.find((asset: any) =>
-            asset &&
-            typeof asset.name === 'string' &&
-            asset.name.toLowerCase().endsWith('.exe')
-          );
-          const msiAsset = release.assets.find((asset: any) =>
-            asset &&
-            typeof asset.name === 'string' &&
-            asset.name.toLowerCase().endsWith('.msi')
-          );
-          const targetDesktopAsset = exeSetupAsset || exeAsset || msiAsset;
-          if (targetDesktopAsset && typeof targetDesktopAsset.browser_download_url === 'string') {
-            const sanitizedDesktop = SecuritySanitizer.sanitizeUrl(targetDesktopAsset.browser_download_url);
-            if (
-              sanitizedDesktop &&
-              (sanitizedDesktop.toLowerCase().endsWith('.exe') || sanitizedDesktop.toLowerCase().endsWith('.msi'))
-            ) {
-              targetDownloadUrl = sanitizedDesktop;
-            }
-          }
-        } else {
-          // Mobile (Android): locate .apk asset
-          const apkAsset = release.assets.find((asset: any) =>
-            asset && typeof asset.name === 'string' && asset.name.toLowerCase().endsWith('.apk')
-          );
-          if (apkAsset && typeof apkAsset.browser_download_url === 'string') {
-            const sanitizedApk = SecuritySanitizer.sanitizeUrl(apkAsset.browser_download_url);
-            if (sanitizedApk && sanitizedApk.toLowerCase().endsWith('.apk')) {
-              targetDownloadUrl = sanitizedApk;
-            }
-          }
-        }
-      }
+      const targetDownloadUrl = installerUrl(release) || safeReleaseHtmlUrl;
+      // An automatic prompt must offer an actual installer. Check again when
+      // that platform finishes publishing, rather than caching an empty release.
+      if (!force && !installerUrl(release)) return null;
+      await this.saveUpdateState({ lastCheckedAt: now });
 
       const rawName = typeof release.name === 'string' ? release.name : '';
-      const safeName = rawName.trim().length > 0 ? SecuritySanitizer.sanitizeText(rawName) : `Lumen v${latestVersion}`;
+      const safeName = rawName.trim().length > 0 ? SecuritySanitizer.sanitizeText(rawName) : `Lumen v${resolvedVersion}`;
 
       const rawBody = typeof release.body === 'string' ? release.body : '';
       const safeBody = rawBody.trim().length > 0 ? SecuritySanitizer.sanitizeText(rawBody) : 'Melhorias de estabilidade, desempenho e correções visuais.';
@@ -189,7 +188,7 @@ export class AppUpdateService {
       return {
         hasUpdate: true,
         currentVersion: APP_VERSION,
-        latestVersion: latestVersion,
+        latestVersion: resolvedVersion,
         releaseName: safeName,
         releaseNotes: safeBody,
         downloadUrl: targetDownloadUrl,
@@ -240,16 +239,17 @@ export class AppUpdateService {
   /**
    * Records when the update prompt modal was shown or dismissed by the user.
    */
-  public static async recordPromptDismissed(): Promise<void> {
-    await this.saveUpdateState({ lastPromptDismissedAt: Date.now() });
+  public static async recordPromptDismissed(version?: string): Promise<void> {
+    await this.saveUpdateState({ lastPromptDismissedAt: Date.now(), lastPromptVersion: version });
   }
 
   /**
    * Checks if the 24-hour cooldown for automatic update pop-ups has passed.
    */
-  public static async shouldShowAutomaticPrompt(): Promise<boolean> {
+  public static async shouldShowAutomaticPrompt(version?: string): Promise<boolean> {
     try {
       const state = await this.getUpdateState();
+      if (version && state.lastPromptVersion !== version) return true;
       if (!state.lastPromptDismissedAt) return true;
       const COOLDOWN_24H_MS = 24 * 60 * 60 * 1000;
       return (Date.now() - state.lastPromptDismissedAt) >= COOLDOWN_24H_MS;

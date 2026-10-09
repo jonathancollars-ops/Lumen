@@ -438,6 +438,7 @@ export interface AppUpdateState {
   lastCheckedAt?: number;
   ignoredVersion?: string;
   lastPromptDismissedAt?: number;
+  lastPromptVersion?: string;
 }
 
 // ─────────────────────────────────────────────────────────────

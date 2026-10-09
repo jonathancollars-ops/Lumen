@@ -265,8 +265,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSavedTimer(TimerService.fromActiveTimerState(effectiveTimer));
       }
       setActiveTimer(effectiveTimer);
-      void NotificationService.refreshMonthlyNotifications(safeEvents, safeSubjects)
-        .catch(error => console.warn('Erro ao renovar alertas mensais:', error));
     } catch (err) {
       console.error('Error loading app data in AppContext:', err);
     } finally {
@@ -544,7 +542,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const saved = await StorageService.saveEvents(updated);
     if (!saved) throw new Error('Não foi possível salvar o evento.');
     setEvents(updated);
-    await NotificationService.scheduleEventNotifications(event);
+    await NotificationService.scheduleEventNotifications(event, attendances);
     triggerDebouncedCloudSync();
   };
 

@@ -1,4 +1,4 @@
-import { AppEvent, Subject } from '../types';
+import { AppEvent, AttendanceRecord, Subject } from '../types';
 
 export function formatNotificationTimeNotice(minutesBefore: number, timePart: string): string {
   if (minutesBefore <= 0) return "Começando agora!";
@@ -45,7 +45,7 @@ export const NotificationService = {
     }
   },
 
-  async scheduleEventNotifications(event: AppEvent): Promise<void> {
+  async scheduleEventNotifications(event: AppEvent, _attendances: AttendanceRecord[] = []): Promise<void> {
     if (!event || typeof event !== 'object' || !event.id) return;
     try {
       await this.cancelEventNotifications(event.id);
@@ -66,6 +66,14 @@ export const NotificationService = {
 
   async refreshMonthlyNotifications(_events: AppEvent[], _subjects: Subject[]): Promise<void> {
     // Calendar alerts are scheduled by the native service.
+  },
+
+  async syncEventNotifications(_events: AppEvent[], _subjects: Subject[], _attendances: AttendanceRecord[] = [], _forceReschedule = false): Promise<void> {
+    // Native OS alarm recovery is specific to the mobile notification service.
+  },
+
+  observeNotificationResponses(_listener: (data: Record<string, unknown>) => void): () => void {
+    return () => {};
   },
 
   async cancelSubjectNotifications(subjectId: string, eventIds?: string[]): Promise<void> {

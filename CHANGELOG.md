@@ -11,6 +11,21 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.7] - 2026-10-08
+### Atualização automática no Windows
+- Alinha a versão incorporada nos aplicativos Android e Windows em 3.7.7 e incrementa o código de versão do Android.
+- Publica os instaladores das duas plataformas na mesma release oficial, com uma tag igual à versão instalada. Bloqueia a republicação de pacotes com o mesmo número de versão e verifica a consistência dos arquivos de configuração.
+- Verifica atualizações também ao retomar o app, recuperar a conexão e durante sessões longas. Falhas de rede podem ser tentadas novamente sem esperar três horas.
+- Procura um instalador compatível quando a release mais recente ainda tem apenas o pacote da outra plataforma. Prioriza setup/MSI e evita usar o executável portátil como instalador.
+- A opção de lembrar depois adia o aviso por 24 horas; uma versão mais nova pode ser anunciada imediatamente.
+
+### Notificações no Android
+- Restaura a criação do canal e a solicitação de permissão para notificações.
+- Recupera e rearma os lembretes salvos ao abrir ou retomar o app e depois da sincronização. Atualizações, edições e exclusões usam os mesmos identificadores para evitar alertas duplicados.
+- Agenda os avisos de aulas em todos os dias selecionados, incluindo lembretes no dia anterior.
+- Agenda a confirmação de presença um minuto após a aula e abre a aba de frequência ao tocar na notificação. Prepara as próximas duas semanas e renova esse período ao retomar o app; presenças, faltas e cancelamentos já registrados removem o aviso correspondente.
+- Remove alertas de eventos desativados e de matérias arquivadas ou excluídas, preservando o aviso do Pomodoro.
+
 ## [3.7.6] - 2026-09-30
 ### Sincronização Android/Windows e interface adaptável
 - Envia e recebe alterações automaticamente pelo Firebase usando a mesma conta Google nos dois dispositivos.

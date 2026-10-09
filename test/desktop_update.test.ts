@@ -103,7 +103,7 @@ async function runDesktopUpdateTests(): Promise<void> {
           'Prioritizes *-setup.exe over generic .exe and .msi on Desktop'
         );
 
-        // 2.2 Desktop finds generic .exe if no setup .exe is available
+        // 2.2 Desktop prefers MSI over an ambiguous generic executable
         (globalThis as any).fetch = async () => ({
           ok: true,
           json: async () => ({
@@ -126,8 +126,8 @@ async function runDesktopUpdateTests(): Promise<void> {
 
         const updateWithExe = await AppUpdateService.checkForUpdates(true);
         assert(
-          updateWithExe?.downloadUrl === 'https://github.com/jonathancollars-ops/organiza/releases/download/v3.9.0/lumen.exe',
-          'Picks generic .exe when setup .exe is not present'
+          updateWithExe?.downloadUrl === 'https://github.com/jonathancollars-ops/organiza/releases/download/v3.9.0/lumen.msi',
+          'Picks MSI when setup .exe is not present'
         );
 
         // 2.3 Desktop finds .msi if no .exe is available

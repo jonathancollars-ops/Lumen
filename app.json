@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lumen",
     "slug": "lumen",
-    "version": "3.7.6",
+    "version": "3.7.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": [
@@ -15,7 +15,7 @@
       "supportsTablet": true
     },
     "android": {
-      "versionCode": 6,
+      "versionCode": 7,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

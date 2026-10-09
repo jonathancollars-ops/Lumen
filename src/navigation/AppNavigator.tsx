@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, ScrollView } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,8 @@ import { NotificationService } from '../services/notifications';
 import { AppUpdateInfo } from '../types';
 import { SwipeableTabContainer } from '../components/SwipeableTabContainer';
 import { useDeepLinkHandler } from '../hooks/useDeepLinkHandler';
+import { useNotificationRecovery } from '../hooks/useNotificationRecovery';
+import { useAutomaticAppUpdates } from '../hooks/useAutomaticAppUpdates';
 
 // Screens
 import { AgendaScreenWrapper } from '../screens/AgendaScreenWrapper';
@@ -39,9 +41,24 @@ export function AppNavigator() {
   const colors = getThemeColors(theme);
   const insets = useSafeAreaInsets();
   const { isDesktop } = useResponsive();
+  const navigationRef = useNavigationContainerRef<{ Agenda: undefined; Faltas: undefined }>();
+  const pendingNotification = useRef<Record<string, unknown> | null>(null);
+  const openNotification = () => {
+    if (!navigationRef.isReady() || !pendingNotification.current) return;
+    const data = pendingNotification.current;
+    pendingNotification.current = null;
+    navigationRef.navigate(data.type === 'attendance_reminder' ? 'Faltas' : 'Agenda');
+    void refreshData();
+  };
+
+  useEffect(() => NotificationService.observeNotificationResponses(data => {
+    pendingNotification.current = data;
+    openNotification();
+  }), [navigationRef]);
 
   // Interceptação de Deep Links (lumen://gemini/...) e integração nativa com Android App Actions
   useDeepLinkHandler({ onActionExecuted: refreshData });
+  useNotificationRecovery(isInitializing, events, subjects, attendances);
 
   // Global Modals State
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
@@ -57,48 +74,17 @@ export function AppNavigator() {
   const handleCloseUpdateModal = async () => {
     setUpdateModalVisible(false);
     try {
-      await AppUpdateService.recordPromptDismissed();
+      await AppUpdateService.recordPromptDismissed(updateInfo?.latestVersion);
     } catch {
       // Ignora falhas de persistência
     }
   };
   
-  useEffect(() => {
-    const check = async () => {
-      try {
-        // Cooldown de 24 horas: se o usuário já visualizou ou cancelou o modal hoje, não reabre automaticamente
-        const shouldShow = await AppUpdateService.shouldShowAutomaticPrompt();
-        if (!shouldShow) {
-          return;
-        }
+  useAutomaticAppUpdates(info => {
+    setUpdateInfo(info);
+    setUpdateModalVisible(true);
+  });
 
-        const info = await AppUpdateService.checkForUpdates(false);
-        if (info && info.hasUpdate) {
-          setUpdateInfo(info);
-          setUpdateModalVisible(true);
-          // Marca visualização para iniciar o cooldown mesmo se o app for encerrado
-          await AppUpdateService.recordPromptDismissed();
-        }
-      } catch {
-        // Falhas na verificação em segundo plano são tratadas silenciosamente
-      }
-    };
-    check();
-  }, []);
-
-  useEffect(() => {
-    const reconcileNotifications = async () => {
-      try {
-        if (!isInitializing) {
-          await NotificationService.reconcileAndPurgeOrphanNotifications(events, subjects);
-        }
-      } catch (notifErr) {
-        console.warn('Erro ao reconciliar notificações na inicialização do AppNavigator:', notifErr);
-      }
-    };
-    reconcileNotifications();
-  }, [isInitializing, events, subjects]);
-  
   if (isInitializing) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
@@ -494,7 +480,7 @@ export function AppNavigator() {
   return (
     <>
       <StatusBar style={theme === 'light' ? 'dark' : 'light'} backgroundColor="transparent" translucent />
-      <NavigationContainer theme={navTheme}>
+      <NavigationContainer theme={navTheme} ref={navigationRef} onReady={openNotification}>
         <Tab.Navigator
           tabBar={props => <ResponsiveTabBar {...props} />}
           screenOptions={{

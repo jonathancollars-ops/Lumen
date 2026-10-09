@@ -1,9 +1,26 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { AppEvent, Subject } from '../types';
+import { AppEvent, AttendanceRecord, Subject } from '../types';
 import { parseISO, subMinutes } from 'date-fns';
+import { getLocalDateString } from '../utils/date';
 
-const eventNotificationJobs = new Map<string, Promise<void>>();
+// Edits, deletion and recovery share a queue so an older refresh cannot restore
+// notifications after an event has been deleted or disabled.
+let notificationJob: Promise<unknown> = Promise.resolve();
+function runNotificationJob<T>(work: () => Promise<T>): Promise<T> {
+  const job = notificationJob.then(work);
+  notificationJob = job.catch(() => {});
+  return job;
+}
+
+async function cancelEventNotifications(eventId: string): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const notification of scheduled ?? []) {
+    if (notification.content.data?.eventId === eventId) {
+      await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+    }
+  }
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -84,6 +101,103 @@ function monthlyNotificationTriggers(
   return triggers;
 }
 
+function eventNotificationRequests(event: AppEvent, attendances: AttendanceRecord[]): Notifications.NotificationRequestInput[] {
+  if (event.isNotified === false || typeof event.date !== 'string' || typeof event.startTime !== 'string') return [];
+  const datePart = event.date.split('T')[0];
+  const eventDate = parseISO(`${datePart}T${event.startTime}`);
+  if (!Number.isFinite(eventDate.getTime())) return [];
+  const requests: Notifications.NotificationRequestInput[] = [];
+  const add = (key: string, content: Notifications.NotificationContentInput,
+    trigger: Notifications.SchedulableNotificationTriggerInput) => {
+    // Persist the intended content and trigger in data: native trigger objects
+    // have platform-specific shapes when read back from the OS.
+    const signature = JSON.stringify({ content, trigger });
+    requests.push({
+      identifier: `lumen_${encodeURIComponent(event.id)}_${key}`,
+      content: { ...content, data: { ...content.data, notificationSignature: signature } },
+      trigger,
+    });
+  };
+  const data = { eventId: event.id, subjectId: event.subjectId || '', category: event.category || '' };
+  const days = Array.isArray(event.recurrenceDays)
+    ? [...new Set(event.recurrenceDays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6))]
+    : [];
+  const weekdays = days.length ? days : [eventDate.getDay()];
+  const categoryEmoji = event.category?.includes('Prova') || event.title?.toLowerCase().includes('prova')
+    ? '📝' : event.category?.includes('Saúde') || event.category?.includes('Academia')
+    ? '💪' : event.category?.includes('Lazer') ? '☕' : '📅';
+
+  for (const minutesBefore of new Set(Array.isArray(event.alerts) ? event.alerts : [])) {
+    if (!Number.isFinite(minutesBefore) || minutesBefore < 0) continue;
+    const timeNotice = formatNotificationTimeNotice(minutesBefore, event.startTime);
+    const content: Notifications.NotificationContentInput = {
+      title: `${categoryEmoji} ${event.title || 'Compromisso'}`,
+      body: event.description ? `${timeNotice} • ${event.description}` : timeNotice,
+      data: { ...data, type: 'event_reminder' }, sound: true, vibrate: [0, 250, 250, 250],
+    };
+    const triggerDate = subMinutes(eventDate, minutesBefore);
+    if (!Number.isFinite(triggerDate.getTime())) continue;
+    if (event.recurrence === 'daily') {
+      add(`alert_${minutesBefore}`, content, {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: triggerDate.getHours(), minute: triggerDate.getMinutes(), channelId: 'default',
+      });
+    } else if (event.recurrence === 'weekly') {
+      for (const day of weekdays) {
+        const occurrence = new Date(eventDate);
+        occurrence.setDate(occurrence.getDate() + (day - eventDate.getDay() + 7) % 7);
+        const alert = subMinutes(occurrence, minutesBefore);
+        add(`alert_${minutesBefore}_${day}`, content, {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+          weekday: alert.getDay() + 1, hour: alert.getHours(), minute: alert.getMinutes(), channelId: 'default',
+        });
+      }
+    } else if (hasMonthlyRecurrence(event)) {
+      for (const trigger of monthlyNotificationTriggers(event, eventDate, minutesBefore)) {
+        const key = 'date' in trigger ? trigger.date : 'monthly';
+        add(`alert_${minutesBefore}_${key}`, content, trigger);
+      }
+    } else if (triggerDate.getTime() > Date.now()) {
+      add(`alert_${minutesBefore}`, content, {
+        type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate.getTime(), channelId: 'default',
+      });
+    }
+  }
+
+  // Dated reminders allow an individual class to be confirmed/cancelled without
+  // disabling the following weeks. The next two weeks are refilled on resume.
+  if (event.category === 'Faculdade/Aulas' && event.subjectId && event.recurrence === 'weekly') {
+    const endParts = /^(\d{1,2}):([0-5]\d)$/.exec(event.endTime || '');
+    if (!endParts || Number(endParts[1]) > 23) return requests;
+    const cursor = new Date();
+    cursor.setHours(0, 0, 0, 0);
+    // Include yesterday for a class that finishes after midnight today.
+    cursor.setDate(cursor.getDate() - 1);
+    for (let i = 0; i < 15; i++, cursor.setDate(cursor.getDate() + 1)) {
+      const date = getLocalDateString(cursor);
+      if (date < datePart || !weekdays.includes(cursor.getDay())) continue;
+      const recorded = attendances.some(record => record.date === date && record.status !== 'pending' &&
+        (record.eventId === event.id || (!record.eventId && record.subjectId === event.subjectId)));
+      if (recorded) continue;
+      const end = new Date(cursor);
+      end.setHours(Number(endParts[1]), Number(endParts[2]), 0, 0);
+      const start = new Date(cursor);
+      start.setHours(eventDate.getHours(), eventDate.getMinutes(), 0, 0);
+      if (end.getTime() <= start.getTime()) end.setDate(end.getDate() + 1);
+      // Leave a minute for the class to end before asking for confirmation.
+      end.setMinutes(end.getMinutes() + 1);
+      if (end.getTime() <= Date.now()) continue;
+      add(`attendance_${date}`, {
+        title: `🎓 Confirmar presença: ${event.title || 'Aula'}`,
+        body: 'Você esteve presente ou faltou? Toque para registrar sua frequência.',
+        sound: true, vibrate: [0, 250, 250, 250],
+        data: { ...data, type: 'attendance_reminder', attendanceDate: date },
+      }, { type: Notifications.SchedulableTriggerInputTypes.DATE, date: end.getTime(), channelId: 'default' });
+    }
+  }
+  return requests;
+}
+
 export const NotificationService = {
   async requestPermissions(): Promise<boolean> {
     try {
@@ -107,16 +221,18 @@ export const NotificationService = {
       }
 
       let existingStatus = 'undetermined';
+      let canAskAgain = true;
       try {
         const perm = await Notifications.getPermissionsAsync();
         existingStatus = perm?.status || 'undetermined';
+        canAskAgain = perm?.canAskAgain !== false;
       } catch (getErr) {
         // Trata negações ou exceções de leitura de permissões
         console.warn('Erro ao consultar permissões de notificação / alarmes exatos', getErr);
       }
 
       let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
+      if (existingStatus !== 'granted' && canAskAgain) {
         try {
           const req = await Notifications.requestPermissionsAsync({
             ios: {
@@ -140,114 +256,59 @@ export const NotificationService = {
     }
   },
 
-  async scheduleEventNotifications(event: AppEvent): Promise<void> {
+  async scheduleEventNotifications(event: AppEvent, attendances: AttendanceRecord[] = []): Promise<void> {
     if (!event || typeof event !== 'object' || !event.id) return;
-
-    // A refresh and an edit must finish cancelling/scheduling in request order.
-    const previous = eventNotificationJobs.get(event.id) ?? Promise.resolve();
-    const job = previous.then(async () => {
+    await runNotificationJob(async () => {
       try {
-        // First, cancel any existing notifications for this event
-        await this.cancelEventNotifications(event.id);
-
-        if (event.isNotified === false || !Array.isArray(event.alerts) || event.alerts.length === 0) return;
-        if (!event.date || typeof event.date !== 'string' || !event.startTime) return;
-
-        const datePart = event.date.split('T')[0];
-        const timePart = typeof event.startTime === 'string' && event.startTime.includes(':')
-          ? event.startTime
-          : '08:00';
-        const eventDate = parseISO(`${datePart}T${timePart}:00`);
-      
-        if (isNaN(eventDate.getTime())) return;
-
-        const categoryEmoji = event.category?.includes('Prova') || event.title?.toLowerCase().includes('prova')
-          ? '📝'
-          : event.category?.includes('Saúde') || event.category?.includes('Academia')
-          ? '💪'
-          : event.category?.includes('Lazer')
-          ? '☕'
-          : '📅';
-
-        for (const minutesBefore of event.alerts) {
-          if (!Number.isFinite(minutesBefore)) continue;
-          const triggerDate = subMinutes(eventDate, minutesBefore);
-          if (isNaN(triggerDate.getTime())) continue;
-
-          const hour = triggerDate.getHours();
-          const minute = triggerDate.getMinutes();
-
-          const timeNotice = formatNotificationTimeNotice(minutesBefore, timePart);
-
-          const content = {
-            title: `${categoryEmoji} ${event.title || 'Compromisso'}`,
-            body: event.description ? `${timeNotice} • ${event.description}` : timeNotice,
-            data: {
-              eventId: event.id,
-              subjectId: event.subjectId || '',
-              category: event.category || '',
-            },
-            sound: true,
-            vibrate: [0, 250, 250, 250],
-          };
-
+        if (!(await this.requestPermissions())) return;
+        await cancelEventNotifications(event.id);
+        for (const request of eventNotificationRequests(event, attendances)) {
           try {
-            if (event.recurrence === 'daily') {
-              // Daily recurring notification
-              await Notifications.scheduleNotificationAsync({
-                content,
-                trigger: {
-                  type: Notifications.SchedulableTriggerInputTypes.DAILY,
-                  hour,
-                  minute,
-                  channelId: 'default',
-                },
-              });
-            } else if (event.recurrence === 'weekly') {
-              // Weekly recurring notification
-              // Note: date-fns getDay returns 0-6 (Sun-Sat). Expo requires 1-7 (Sun-Sat).
-              const triggerWeekday = triggerDate.getDay() + 1;
-              await Notifications.scheduleNotificationAsync({
-                content,
-                trigger: {
-                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-                  weekday: triggerWeekday,
-                  hour,
-                  minute,
-                  channelId: 'default',
-                },
-              });
-            } else if (hasMonthlyRecurrence(event)) {
-              for (const trigger of monthlyNotificationTriggers(event, eventDate, minutesBefore)) {
-                await Notifications.scheduleNotificationAsync({ content, trigger });
-              }
-            } else {
-              // One-time notification
-              if (triggerDate.getTime() > Date.now()) {
-                await Notifications.scheduleNotificationAsync({
-                  content,
-                  trigger: {
-                    type: Notifications.SchedulableTriggerInputTypes.DATE,
-                    date: triggerDate.getTime(),
-                    channelId: 'default',
-                  },
-                });
-              }
-            }
-          } catch (scheduleErr) {
-            // Gracefully suppress OS denial / exact alarm rejection for this single alert
-            console.warn(`Falha ao agendar alerta (${minutesBefore}min) do evento ${event.id}`, scheduleErr);
+            await Notifications.scheduleNotificationAsync(request);
+          } catch (error) {
+            console.warn('Falha ao agendar notificação do evento', event.id, error);
           }
         }
-      } catch (err) {
-        console.warn('Falha ao processar notificações do evento', event?.id, err);
+      } catch (error) {
+        console.warn('Falha ao processar notificações do evento', event.id, error);
       }
     });
-    eventNotificationJobs.set(event.id, job);
-    try { await job; }
-    finally {
-      if (eventNotificationJobs.get(event.id) === job) eventNotificationJobs.delete(event.id);
-    }
+  },
+
+  async syncEventNotifications(
+    events: AppEvent[], subjects: Subject[], attendances: AttendanceRecord[] = [], forceReschedule = false,
+  ): Promise<void> {
+    await runNotificationJob(async () => {
+      if (!(await this.requestPermissions())) return;
+      const activeSubjects = new Set(subjects.filter(subject => !subject.isArchived).map(subject => subject.id));
+      const desired = new Map<string, Notifications.NotificationRequestInput>();
+      for (const event of events) {
+        if (!event?.id || (event.subjectId && !activeSubjects.has(event.subjectId))) continue;
+        for (const request of eventNotificationRequests(event, attendances)) {
+          desired.set(request.identifier!, request);
+        }
+      }
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      const current = new Map((scheduled ?? []).map(notification => [notification.identifier, notification]));
+      for (const notification of scheduled ?? []) {
+        // Preserve independent notifications such as the active Pomodoro.
+        if (notification.content.data?.eventId && !desired.has(notification.identifier)) {
+          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        }
+      }
+      for (const [identifier, request] of desired) {
+        if (!forceReschedule &&
+          current.get(identifier)?.content.data?.notificationSignature === request.content.data?.notificationSignature) continue;
+        try {
+          // The same identifier replaces an edited notification without a
+          // cancellation gap. On Android the saved request can survive an OS
+          // alarm being dropped, so lifecycle recovery explicitly re-arms it.
+          await Notifications.scheduleNotificationAsync(request);
+        } catch (error) {
+          console.warn('Falha ao recuperar notificação', identifier, error);
+        }
+      }
+    });
   },
 
   async refreshMonthlyNotifications(events: AppEvent[], subjects: Subject[]): Promise<void> {
@@ -264,54 +325,46 @@ export const NotificationService = {
 
   async cancelEventNotifications(eventId: string): Promise<void> {
     if (!eventId || typeof eventId !== 'string') return;
-    try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      if (Array.isArray(scheduled)) {
-        for (const notif of scheduled) {
-          if (notif?.content?.data?.eventId === eventId) {
-            await Notifications.cancelScheduledNotificationAsync(notif.identifier);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Falha ao cancelar notificações', eventId, e);
-    }
+    await runNotificationJob(() => cancelEventNotifications(eventId))
+      .catch(error => console.warn('Falha ao cancelar notificações', eventId, error));
   },
 
   async cancelSubjectNotifications(subjectId: string, eventIds?: string[]): Promise<void> {
     if (!subjectId && (!eventIds || eventIds.length === 0)) return;
-    try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      if (!Array.isArray(scheduled) || scheduled.length === 0) return;
+    await runNotificationJob(async () => {
+      try {
+        const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+        if (!Array.isArray(scheduled) || scheduled.length === 0) return;
 
-      const eventIdSet = new Set<string>(
-        Array.isArray(eventIds) ? eventIds.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
-      );
-      const toCancel: string[] = [];
+        const eventIdSet = new Set<string>(
+          Array.isArray(eventIds) ? eventIds.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
+        );
+        const toCancel: string[] = [];
 
-      for (const notif of scheduled) {
-        const notifData = notif?.content?.data as { eventId?: string; subjectId?: string; category?: string } | undefined;
-        if (!notifData || typeof notifData !== 'object') continue;
+        for (const notif of scheduled) {
+          const notifData = notif?.content?.data as { eventId?: string; subjectId?: string; category?: string } | undefined;
+          if (!notifData || typeof notifData !== 'object') continue;
 
-        const notifSubjectId = typeof notifData.subjectId === 'string' ? notifData.subjectId : '';
-        const notifEventId = typeof notifData.eventId === 'string' ? notifData.eventId : '';
+          const notifSubjectId = typeof notifData.subjectId === 'string' ? notifData.subjectId : '';
+          const notifEventId = typeof notifData.eventId === 'string' ? notifData.eventId : '';
 
-        const matchesSubject = Boolean(subjectId && notifSubjectId === subjectId);
-        const matchesEvent = Boolean(notifEventId && eventIdSet.has(notifEventId));
+          const matchesSubject = Boolean(subjectId && notifSubjectId === subjectId);
+          const matchesEvent = Boolean(notifEventId && eventIdSet.has(notifEventId));
 
-        if (matchesSubject || matchesEvent) {
-          if (notif.identifier) {
-            toCancel.push(notif.identifier);
+          if (matchesSubject || matchesEvent) {
+            if (notif.identifier) {
+              toCancel.push(notif.identifier);
+            }
           }
         }
-      }
 
-      if (toCancel.length > 0) {
-        await Promise.all(toCancel.map(id => Notifications.cancelScheduledNotificationAsync(id)));
+        if (toCancel.length > 0) {
+          await Promise.all(toCancel.map(id => Notifications.cancelScheduledNotificationAsync(id)));
+        }
+      } catch (e) {
+        console.warn('Falha ao cancelar notificações da matéria em lote', subjectId, e);
       }
-    } catch (e) {
-      console.warn('Falha ao cancelar notificações da matéria em lote', subjectId, e);
-    }
+    });
   },
 
   async reconcileAndPurgeOrphanNotifications(
@@ -382,6 +435,18 @@ export const NotificationService = {
       console.warn('Falha ao reconciliar e purgar notificações órfãs:', e);
       return { purgedCount: 0 };
     }
+  },
+
+  observeNotificationResponses(listener: (data: Record<string, unknown>) => void): () => void {
+    const handle = (response: Notifications.NotificationResponse | null) => {
+      const data = response?.notification.request.content.data;
+      if (data?.type !== 'attendance_reminder' && data?.type !== 'event_reminder') return;
+      listener(data);
+      Notifications.clearLastNotificationResponse();
+    };
+    const subscription = Notifications.addNotificationResponseReceivedListener(handle);
+    handle(Notifications.getLastNotificationResponse());
+    return () => subscription.remove();
   },
 
   async scheduleNotificationAsync(request: Notifications.NotificationRequestInput): Promise<string> {

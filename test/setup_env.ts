@@ -156,6 +156,9 @@ export const mockNotifications = {
   scheduleNotificationAsync: async () => 'mock_notif_id',
   getAllScheduledNotificationsAsync: async () => [],
   cancelScheduledNotificationAsync: async () => {},
+  addNotificationResponseReceivedListener: (_listener: (response: any) => void) => ({ remove() {} }),
+  getLastNotificationResponse: () => null,
+  clearLastNotificationResponse: () => {},
   AndroidImportance: { MAX: 5 },
   SchedulableTriggerInputTypes: {
     DAILY: 'daily',
@@ -350,6 +353,7 @@ Module.prototype.require = function (id: string) {
       }),
       useNavigationContainerRef: () => ({
         navigate: () => {},
+        isReady: () => true,
         getCurrentRoute: () => ({ name: 'Agenda' }),
       }),
       NavigationContainer: ({ children }: any) => children,
