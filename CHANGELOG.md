@@ -11,6 +11,12 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.9] - 2026-10-09
+### Ícone dos atalhos no Windows
+- O instalador EXE usa um arquivo de ícone com o número da versão e atualiza os atalhos existentes do desktop e do menu Iniciar. Isso evita reutilizar a imagem antiga do executável no cache do Windows.
+- Preserva os argumentos, o diretório de trabalho e a identificação dos atalhos. Atualiza apenas atalhos que apontam para a instalação do Lumen e respeita a ausência de atalhos removidos pelo usuário.
+- Atualiza a exibição ao terminar a instalação, incluindo o atalho criado na página final do instalador interativo.
+
 ## [3.7.8] - 2026-10-08
 ### Ícone do aplicativo
 - Amplia a gema e remove o quadrado preto e os cantos brancos dos ícones do Windows, incluindo os tamanhos internos do arquivo ICO e os ícones dos instaladores.
