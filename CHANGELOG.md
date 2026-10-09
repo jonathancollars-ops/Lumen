@@ -11,6 +11,12 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.8] - 2026-10-08
+### Ícone do aplicativo
+- Amplia a gema e remove o quadrado preto e os cantos brancos dos ícones do Windows, incluindo os tamanhos internos do arquivo ICO e os ícones dos instaladores.
+- Atualiza o ícone do Android com a gema isolada, camadas transparentes e margem adequada para as máscaras do launcher. Atualiza também a versão monocromática e o favicon.
+- Incrementa a versão para 3.7.8 e o código de versão do Android para 8, permitindo detectar esta atualização.
+
 ## [3.7.7] - 2026-10-08
 ### Atualização automática no Windows
 - Alinha a versão incorporada nos aplicativos Android e Windows em 3.7.7 e incrementa o código de versão do Android.
