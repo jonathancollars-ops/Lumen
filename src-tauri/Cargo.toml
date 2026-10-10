@@ -1,6 +1,6 @@
 [package]
 name = "lumen"
-version = "3.7.9"
+version = "3.7.10"
 description = "Lumen - Assistente Acadêmico"
 authors = ["Lumen Team"]
 edition = "2021"
