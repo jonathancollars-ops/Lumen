@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { getCurrentSemesterId, getCurrentSemesterName } from '../utils';
 import { CourseCRService } from './CourseCRService';
+import { filterValidAttendances } from '../utils/attendanceValidity';
 
 const EVENTS_KEY = '@organiza_events';
 const THEME_KEY = '@organiza_theme';
@@ -39,6 +40,8 @@ const GROUP_PROJECTS_KEY = '@organiza_group_projects';
 const GAMIFICATION_KEY = '@organiza_gamification';
 const ACTIVE_TIMER_KEY = '@organiza_active_timer';
 const GOOGLE_CLIENT_ID_KEY = '@organiza_google_client_id';
+export const DESKTOP_CALENDAR_EXPANDED_KEY = '@lumen:desktop_calendar_expanded';
+
 
 interface SecureStoreModule {
   setItemAsync: (key: string, value: string, options?: { keychainAccessible?: number }) => Promise<void>;
@@ -584,46 +587,49 @@ export const StorageService = {
     if (!subjectId || typeof subjectId !== 'string') return false;
 
     try {
-      // 1. Remove de subjects
-      const subjects = await this.getSubjects();
-      const targetSubject = subjects.find(s => s.id === subjectId);
-      const targetName = targetSubject?.name?.trim().toLowerCase();
-      const updatedSubjects = subjects.filter(s => s.id !== subjectId);
-      await this.saveSubjects(updatedSubjects);
-
-      // 2. Remove eventos associados
-      const events = await this.getEvents();
-      const isSubjectEvent = (e: AppEvent): boolean => {
-        if (e.subjectId === subjectId) return true;
-        if (!e.subjectId || e.subjectId.trim() === '') {
-          if (targetName && targetName.length > 0) {
-            const titleLower = (e.title || '').toLowerCase();
-            const isExam = (
-              e.category === 'Provas/Trabalhos' ||
-              e.category?.toLowerCase().includes('prova') ||
-              titleLower.includes('prova') ||
-              typeof e.grade !== 'undefined' ||
-              typeof e.weight !== 'undefined'
-            );
-            if (isExam && titleLower.includes(targetName)) {
-              return true;
-            }
-          }
+      // Read and remove all relations in the same queue as cloud restores and
+      // attendance generation. No intermediate snapshot can recreate a class.
+      const { targetSubject, updatedSubjects } = await withStorageWrite(async () => {
+        const collectionKeys = [SUBJECTS_KEY, EVENTS_KEY, ATTENDANCES_KEY, TASKS_KEY, STUDY_SESSIONS_KEY, GROUP_PROJECTS_KEY];
+        const timerKeys = [ACTIVE_TIMER_KEY, '@organiza_timer_state'];
+        const stored = new Map(await AsyncStorage.multiGet([...collectionKeys, ...timerKeys]));
+        const read = <T,>(key: string): T[] => {
+          const raw = stored.get(key);
+          const parsed = raw == null ? [] : JSON.parse(raw);
+          if (!Array.isArray(parsed)) throw new Error(`Invalid collection during subject deletion: ${key}`);
+          return parsed.filter(Boolean);
+        };
+        const subjects = read<Subject>(SUBJECTS_KEY);
+        const targetSubject = subjects.find(subject => subject.id === subjectId);
+        const targetName = targetSubject?.name?.trim().toLowerCase();
+        const updatedSubjects = subjects.filter(subject => subject.id !== subjectId);
+        const events = read<AppEvent>(EVENTS_KEY);
+        const removedEvents = events.filter(event => {
+          if (event.subjectId === subjectId) return true;
+          if (event.subjectId || !targetName) return false;
+          const title = (event.title || '').toLowerCase();
+          const isExam = event.category === 'Provas/Trabalhos' || event.category?.toLowerCase().includes('prova') ||
+            title.includes('prova') || event.grade !== undefined || event.weight !== undefined;
+          return !!isExam && title.includes(targetName);
+        });
+        const removedIds = new Set(removedEvents.map(event => event.id));
+        const writes: [string, string][] = [
+          [SUBJECTS_KEY, JSON.stringify(updatedSubjects)],
+          [EVENTS_KEY, JSON.stringify(events.filter(event => !removedIds.has(event.id)))],
+          [ATTENDANCES_KEY, JSON.stringify(read<AttendanceRecord>(ATTENDANCES_KEY)
+            .filter(record => record.subjectId !== subjectId && !removedIds.has(record.eventId)))],
+        ];
+        for (const key of [TASKS_KEY, STUDY_SESSIONS_KEY, GROUP_PROJECTS_KEY]) {
+          writes.push([key, JSON.stringify(read<{ subjectId?: string }>(key).filter(item => item.subjectId !== subjectId))]);
         }
-        return false;
-      };
-      const updatedEvents = events.filter(e => !isSubjectEvent(e));
-      await this.saveEvents(updatedEvents);
-
-      // 3. Remove presenças
-      const attendances = await this.getAttendances();
-      const updatedAttendances = attendances.filter(a => a.subjectId !== subjectId);
-      await this.saveAttendances(updatedAttendances);
-
-      // 4. Remove tarefas
-      const tasks = await this.getTasks();
-      const updatedTasks = tasks.filter(t => t.subjectId !== subjectId);
-      await this.saveTasks(updatedTasks);
+        for (const key of timerKeys) {
+          const raw = stored.get(key);
+          if (raw && JSON.parse(raw)?.subjectId === subjectId) writes.push([key, 'null']);
+        }
+        await AsyncStorage.multiSet(writes);
+        for (const [key] of writes) notifyStorageChange(key);
+        return { targetSubject, updatedSubjects };
+      });
 
       // 5. Reconciliação atômica no Desempenho (CourseCRService)
       try {
@@ -691,6 +697,86 @@ export const StorageService = {
       notifyStorageError({ key: ATTENDANCES_KEY, error: e, isQuota: false });
       return false;
     }
+  },
+
+  async reconcileAttendances(records: AttendanceRecord[]): Promise<AttendanceRecord[]> {
+    return withStorageWrite(async () => {
+      const entries = new Map(await AsyncStorage.multiGet([SUBJECTS_KEY, EVENTS_KEY, ATTENDANCES_KEY]));
+      const read = <T,>(key: string): T[] => {
+        const raw = entries.get(key);
+        const parsed = raw == null ? [] : JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error(`Invalid attendance relation data: ${key}`);
+        return parsed.filter(Boolean);
+      };
+      const subjects = read<Subject>(SUBJECTS_KEY);
+      const events = read<AppEvent>(EVENTS_KEY);
+      // Existing persisted statuses win over an older in-flight generation.
+      const current = filterValidAttendances(read<AttendanceRecord>(ATTENDANCES_KEY), subjects, events);
+      const byId = new Map(current.map(record => [record.id, record]));
+      const occurrences = new Set(current.map(record => `${record.eventId}:${record.date}`));
+      for (const record of filterValidAttendances(records, subjects, events)) {
+        const occurrence = `${record.eventId}:${record.date}`;
+        if (byId.has(record.id) || (record.status === 'pending' && occurrences.has(occurrence))) continue;
+        byId.set(record.id, record);
+        occurrences.add(occurrence);
+      }
+      const updated = [...byId.values()];
+      await AsyncStorage.setItem(ATTENDANCES_KEY, JSON.stringify(updated));
+      notifyStorageChange(ATTENDANCES_KEY);
+      return updated;
+    });
+  },
+
+  async saveAttendanceRecord(record: AttendanceRecord): Promise<boolean> {
+    return withStorageWrite(async () => {
+      const subjects = await this.getSubjects();
+      const events = await this.getEvents();
+      if (!filterValidAttendances([record], subjects, events).length) return false;
+      const current = filterValidAttendances(await this.getAttendances(), subjects, events);
+      const updated = current.filter(existing => existing.id !== record.id);
+      updated.push(record);
+      await AsyncStorage.setItem(ATTENDANCES_KEY, JSON.stringify(updated));
+      notifyStorageChange(ATTENDANCES_KEY);
+      return true;
+    });
+  },
+
+  async repairSubjectRelations(): Promise<void> {
+    await withStorageWrite(async () => {
+      const keys = [SUBJECTS_KEY, EVENTS_KEY, ATTENDANCES_KEY, TASKS_KEY, STUDY_SESSIONS_KEY, GROUP_PROJECTS_KEY];
+      const timerKeys = [ACTIVE_TIMER_KEY, '@organiza_timer_state'];
+      const stored = new Map(await AsyncStorage.multiGet([...keys, ...timerKeys]));
+      const read = <T,>(key: string): T[] => {
+        const raw = stored.get(key);
+        const parsed = raw == null ? [] : JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error(`Invalid relation collection: ${key}`);
+        return parsed.filter(Boolean);
+      };
+      const subjects = read<Subject>(SUBJECTS_KEY);
+      const ids = new Set(subjects.map(subject => subject.id));
+      const writes: [string, string][] = [];
+      const clean = <T,>(key: string, records: T[], filtered: T[]) => {
+        if (records.length !== filtered.length) writes.push([key, JSON.stringify(filtered)]);
+      };
+      const events = read<AppEvent>(EVENTS_KEY);
+      const validEvents = events.filter(event => !event.subjectId || ids.has(event.subjectId));
+      clean(EVENTS_KEY, events, validEvents);
+      const records = read<AttendanceRecord>(ATTENDANCES_KEY);
+      clean(ATTENDANCES_KEY, records, filterValidAttendances(records, subjects, validEvents));
+      for (const key of [TASKS_KEY, STUDY_SESSIONS_KEY, GROUP_PROJECTS_KEY]) {
+        const records = read<{ subjectId?: string }>(key);
+        clean(key, records, records.filter(record => !record.subjectId || ids.has(record.subjectId)));
+      }
+      for (const key of timerKeys) {
+        const raw = stored.get(key);
+        const timer = raw ? JSON.parse(raw) : null;
+        if (timer?.subjectId && !ids.has(timer.subjectId)) writes.push([key, 'null']);
+      }
+      if (writes.length) {
+        await AsyncStorage.multiSet(writes);
+        for (const [key] of writes) notifyStorageChange(key);
+      }
+    });
   },
 
   async getTasks(): Promise<StudyTask[]> {
@@ -1530,6 +1616,27 @@ export const StorageService = {
     }
   },
 
+  async getDesktopCalendarExpanded(): Promise<boolean> {
+    try {
+      const val = await AsyncStorage.getItem(DESKTOP_CALENDAR_EXPANDED_KEY);
+      if (val === null) return false;
+      return val === 'true';
+    } catch (e) {
+      console.error('[StorageService] Failed to read desktop calendar expanded state', e);
+      return false;
+    }
+  },
+
+  async saveDesktopCalendarExpanded(expanded: boolean): Promise<boolean> {
+    try {
+      return await safeSetItem(DESKTOP_CALENDAR_EXPANDED_KEY, expanded ? 'true' : 'false');
+    } catch (e: unknown) {
+      console.error('[StorageService] Failed to save desktop calendar expanded state', e);
+      notifyStorageError({ key: DESKTOP_CALENDAR_EXPANDED_KEY, error: e, isQuota: false });
+      return false;
+    }
+  },
+
   /**
    * Clear all application data
    */
@@ -1563,6 +1670,7 @@ export const StorageService = {
       AI_CONFIG_KEY,
       ACTIVE_TIMER_KEY,
       GOOGLE_CLIENT_ID_KEY,
+      DESKTOP_CALENDAR_EXPANDED_KEY,
       '@organiza_local_ai_model_info',
       '@lumen_course_progress',
       ]);
@@ -1570,3 +1678,4 @@ export const StorageService = {
     });
   }
 };
+

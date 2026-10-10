@@ -24,6 +24,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      id-token: write
     env:
       EXPO_PUBLIC_FIREBASE_API_KEY: 'AIzaSyA1V_bCASfJe3Ij9Hvjsv3o9WHDIqt_fqg'
       EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: 'lumen-app-academico.firebaseapp.com'
@@ -35,6 +36,13 @@ jobs:
       EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: '505145390874-jr3d95ph621voepch94fslvas08kqevi.apps.googleusercontent.com'
       EXPO_PUBLIC_GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
       GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
+      WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      WINDOWS_SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+      WINDOWS_SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+      WINDOWS_CERTIFICATE_PROFILE: ${{ vars.WINDOWS_CERTIFICATE_PROFILE }}
 
     steps:
       - name: Verify Desktop OAuth Configuration Before Publishing
@@ -50,6 +58,22 @@ jobs:
 
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Verify Windows Signing Configuration
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_SIGNING_ENABLED -eq 'true') {
+            foreach ($name in @('AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'WINDOWS_SIGNING_ENDPOINT', 'WINDOWS_SIGNING_ACCOUNT', 'WINDOWS_CERTIFICATE_PROFILE')) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+                throw "Configure repository variable $name before enabling Windows signing."
+              }
+            }
+          } elseif ($env:WINDOWS_SIGNING_ENABLED -and $env:WINDOWS_SIGNING_ENABLED -ne 'false') {
+            throw 'WINDOWS_SIGNING_ENABLED must be true or false.'
+          } else {
+            Write-Output '::warning::Windows signing is not enabled. Installers remain unsigned and may trigger SmartScreen.'
+          }
 
       - name: ⚙️ Setup Node.js 20
         uses: actions/setup-node@v4
@@ -103,8 +127,58 @@ jobs:
 
       - name: 🔨 Build Tauri Desktop Executable & Installers (.exe & .msi)
         uses: tauri-apps/tauri-action@v0
+        with:
+          args: ${{ env.WINDOWS_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request' && '--no-bundle' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Authenticate Windows Signing with Azure (OIDC)
+        if: env.WINDOWS_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows Application Before Packaging
+        if: env.WINDOWS_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ env.WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.WINDOWS_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\src-tauri\target\release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify Signed Windows Application and Package Installers
+        if: env.WINDOWS_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          ./scripts/verify_windows_signatures.ps1 -Path src-tauri/target/release/lumen.exe
+          npm run tauri -- bundle --bundles nsis,msi --no-binary-patching --ci
+          if ($LASTEXITCODE -ne 0) { throw 'Tauri installer packaging failed.' }
+
+      - name: Sign Windows Installers
+        if: env.WINDOWS_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ env.WINDOWS_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.WINDOWS_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.WINDOWS_CERTIFICATE_PROFILE }}
+          files-folder: ${{ github.workspace }}\src-tauri\target\release\bundle
+          files-folder-filter: exe,msi
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify Windows Installer Signatures Before Publishing
+        if: env.WINDOWS_SIGNING_ENABLED == 'true' && github.event_name != 'pull_request'
+        shell: pwsh
+        run: ./scripts/verify_windows_signatures.ps1 -Path src-tauri/target/release/bundle
 
       - name: 📋 Prepare Windows Artifacts & Calculate Checksums
         id: prepare-artifact

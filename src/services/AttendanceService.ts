@@ -1,6 +1,7 @@
-import { AppEvent, AttendanceRecord } from '../types';
+import { AppEvent, AttendanceRecord, Subject } from '../types';
 import { StorageService } from './storage';
 import { generateId, getLocalDateString } from '../utils';
+import { filterValidAttendances } from '../utils/attendanceValidity';
 
 export const AttendanceService = {
   /**
@@ -9,7 +10,8 @@ export const AttendanceService = {
    */
   async generatePendingAttendances(
     events?: AppEvent[] | null,
-    existingRecords?: AttendanceRecord[] | null
+    existingRecords?: AttendanceRecord[] | null,
+    subjects?: Subject[] | null,
   ): Promise<AttendanceRecord[]> {
     try {
       const today = new Date();
@@ -20,13 +22,17 @@ export const AttendanceService = {
         ? events.filter((e): e is AppEvent => Boolean(e && typeof e === 'object'))
         : [];
 
-      const safeRecords = Array.isArray(existingRecords)
+      const subjectList = subjects === undefined ? await StorageService.getSubjects() : subjects;
+      const safeSubjects = Array.isArray(subjectList) ? subjectList.filter(Boolean) : [];
+      const activeSubjectIds = new Set(safeSubjects.filter(subject => !subject.isArchived).map(subject => subject.id));
+      const inputRecords = Array.isArray(existingRecords)
         ? existingRecords.filter((r): r is AttendanceRecord => Boolean(r && typeof r === 'object'))
         : [];
+      const safeRecords = filterValidAttendances(inputRecords, safeSubjects, safeEvents);
 
       const newRecords: AttendanceRecord[] = [];
       const classEvents = safeEvents.filter(
-        e => e.category === 'Faculdade/Aulas' && e.recurrence === 'weekly' && Boolean(e.subjectId)
+        e => e.category === 'Faculdade/Aulas' && e.recurrence === 'weekly' && !!e.subjectId && activeSubjectIds.has(e.subjectId)
       );
 
       // Fast lookup for existing records: Set of "eventId:date"
@@ -101,22 +107,22 @@ export const AttendanceService = {
         }
       }
 
-      if (newRecords.length > 0) {
+      if (newRecords.length > 0 || safeRecords.length !== inputRecords.length) {
         const updatedRecords = [...safeRecords, ...newRecords];
         try {
-          await StorageService.saveAttendances(updatedRecords);
+          // Re-check persisted subjects/events inside the write queue: deletion
+          // or a cloud restore may have happened while records were generated.
+          return await StorageService.reconcileAttendances(updatedRecords);
         } catch (saveError) {
           console.warn('AttendanceService: Failed to persist generated attendances', saveError);
+          return [];
         }
-        return updatedRecords;
       }
 
       return safeRecords;
     } catch (err) {
       console.warn('AttendanceService.generatePendingAttendances caught unexpected error:', err);
-      return Array.isArray(existingRecords)
-        ? existingRecords.filter((r): r is AttendanceRecord => Boolean(r && typeof r === 'object'))
-        : [];
+      return [];
     }
   }
 };

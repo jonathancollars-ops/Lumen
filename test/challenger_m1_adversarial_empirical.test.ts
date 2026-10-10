@@ -326,6 +326,9 @@ async function runAdversarialEmpiricalChallenge() {
       } as any
     ];
 
+    await StorageService.saveSubjects([...new Set(invalidDateEvents.map(event => event.subjectId))].filter(Boolean).map(id => ({ id, name: 'Fixture' })) as any);
+    await StorageService.saveEvents(invalidDateEvents);
+    await StorageService.saveAttendances([]);
     const resInvalidDates = await AttendanceService.generatePendingAttendances(invalidDateEvents, []);
     assert(Array.isArray(resInvalidDates), 'Invalid date events handled gracefully without crashing');
     // e_invalid_5 and e_invalid_6 with valid date (2026-01-01) should generate attendances safely with fallback endTime (23:59)
@@ -345,6 +348,9 @@ async function runAdversarialEmpiricalChallenge() {
     ];
 
     const loopStart = Date.now();
+    await StorageService.saveSubjects([{ id: 'sub_ancient', name: 'Fixture' }] as any);
+    await StorageService.saveEvents(ancientEvent);
+    await StorageService.saveAttendances([]);
     const ancientRes = await AttendanceService.generatePendingAttendances(ancientEvent, []);
     const loopDuration = Date.now() - loopStart;
 
@@ -362,6 +368,9 @@ async function runAdversarialEmpiricalChallenge() {
       endTime: '12:00'
     };
 
+    await StorageService.saveSubjects([{ id: 'sub_calc', name: 'Fixture' }] as any);
+    await StorageService.saveEvents([recurringEvent]);
+    await StorageService.saveAttendances([]);
     const firstPass = await AttendanceService.generatePendingAttendances([recurringEvent], []);
     assert(firstPass.length > 0, 'First pass generated attendances');
 
@@ -381,6 +390,9 @@ async function runAdversarialEmpiricalChallenge() {
     }));
 
     const heavyStart = Date.now();
+    await StorageService.saveSubjects(heavyEvents.map(event => ({ id: event.subjectId, name: 'Fixture' })) as any);
+    await StorageService.saveEvents(heavyEvents);
+    await StorageService.saveAttendances([]);
     const heavyResult = await AttendanceService.generatePendingAttendances(heavyEvents, []);
     const heavyDuration = Date.now() - heavyStart;
 

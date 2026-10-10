@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, LayoutAnimation } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import {
   AppEvent,
@@ -15,6 +15,8 @@ import { getLocalDateString, formatDisplayDate, calculateDaySchedule, DaySchedul
 import * as Haptics from 'expo-haptics';
 import { format, parseISO, addDays, getDay } from 'date-fns';
 import { useResponsive } from '../hooks/useResponsive';
+import { filterValidAttendances } from '../utils/attendanceValidity';
+import { StorageService } from '../services/storage';
 
 // Configuração do Locale em Português para react-native-calendars
 if (!LocaleConfig.locales['pt-br']) {
@@ -74,8 +76,42 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
   // View mode toggle: 'checklist' vs 'timeline'
   const [viewMode, setViewMode] = useState<'checklist' | 'timeline'>('checklist');
 
-  // Month Calendar collapsible state (default false, accessible on demand)
+  // Month Calendar collapsible state (accessible on demand, persisted across sessions)
   const [isMonthCalendarExpanded, setIsMonthCalendarExpanded] = useState(false);
+
+  // Load persisted calendar expansion preference
+  useEffect(() => {
+    let isMounted = true;
+    StorageService.getDesktopCalendarExpanded().then((saved) => {
+      if (isMounted) {
+        setIsMonthCalendarExpanded(saved);
+      }
+    }).catch(err => {
+      console.warn('[AgendaScreen] Erro ao carregar preferência do calendário:', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Handler to toggle and persist calendar expansion state
+  const toggleMonthCalendar = useCallback(() => {
+    try {
+      if (Platform.OS !== 'web' && LayoutAnimation?.configureNext) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+    } catch {
+      // Safe fallback
+    }
+    Haptics.selectionAsync();
+    setIsMonthCalendarExpanded(prev => {
+      const next = !prev;
+      StorageService.saveDesktopCalendarExpanded(next).catch(err => {
+        console.warn('[AgendaScreen] Erro ao persistir preferência do calendário:', err);
+      });
+      return next;
+    });
+  }, []);
 
   const todayStr = getLocalDateString();
   const targetDate = selectedDate || todayStr;
@@ -132,8 +168,8 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
 
   // Pending absences count
   const pendingAttendancesCount = useMemo(() => {
-    return attendances.filter(a => a.status === 'pending').length;
-  }, [attendances]);
+    return filterValidAttendances(attendances, subjects, events).filter(a => a.status === 'pending').length;
+  }, [attendances, subjects, events]);
 
   // Filter events for targetDate
   const todaysEvents = useMemo(() => {
@@ -146,7 +182,7 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
       // Filter archived subjects
       if (e.subjectId) {
         const subject = subjects.find(s => s.id === e.subjectId);
-        if (subject?.isArchived) return false;
+        if (!subject || subject.isArchived) return false;
       }
 
       // Filter cancelled classes
@@ -393,19 +429,21 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
       {/* Toggle Month Calendar Button */}
       <TouchableOpacity
         style={styles.monthToggleBtn}
-        onPress={() => {
-          Haptics.selectionAsync();
-          setIsMonthCalendarExpanded(prev => !prev);
-        }}
+        onPress={toggleMonthCalendar}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={isMonthCalendarExpanded ? 'Recolher calendário' : 'Ver mês completo'}
       >
+        <Text style={[styles.monthToggleBtnChevron, { color: colors.primary }]}>
+          {isMonthCalendarExpanded ? '⌃' : '⌄'}
+        </Text>
         <Text style={[styles.monthToggleBtnText, { color: colors.primary }]}>
-          {isMonthCalendarExpanded ? '▲ Recolher mês' : '▼ Ver mês completo'}
+          {isMonthCalendarExpanded ? 'Recolher calendário' : 'Ver mês completo'}
         </Text>
       </TouchableOpacity>
 
       {/* Collapsible Monthly Calendar */}
-      {(isDesktop || isMonthCalendarExpanded) && (
+      {isMonthCalendarExpanded && (
         <View style={[styles.calendarCard, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 10 }]}>
           <Calendar
             current={targetDate}
@@ -1397,10 +1435,7 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
                     borderColor: isMonthCalendarExpanded ? colors.primary : colors.borderSubtle
                   }
                 ]}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setIsMonthCalendarExpanded(prev => !prev);
-                }}
+                onPress={toggleMonthCalendar}
                 activeOpacity={0.7}
                 accessibilityLabel={isMonthCalendarExpanded ? "Recolher calendário mensal" : "Expandir calendário mensal"}
                 accessibilityRole="button"
@@ -1621,18 +1656,39 @@ const getStyles = (colors: any, theme: ThemeType) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    marginTop: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    marginTop: 8,
+    borderRadius: 14,
+    alignSelf: 'center',
+    gap: 6,
+    backgroundColor: theme === 'light' ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme === 'light' ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)',
+    ...(Platform.OS === 'web' ? ({
+      cursor: 'pointer',
+      userSelect: 'none',
+      transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+    } as any) : {}),
+  },
+  monthToggleBtnChevron: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 14,
   },
   monthToggleBtnText: {
     fontSize: 12,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   calendarCard: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 8,
     overflow: 'hidden',
+    ...(Platform.OS === 'web' ? ({
+      transition: 'opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+    } as any) : {}),
   },
 
   // Inset Grouped Patterns

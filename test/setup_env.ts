@@ -149,6 +149,8 @@ export const mockSecureStoreImpl = {
 };
 
 export const mockNotifications = {
+  getPresentedNotificationsAsync: async (): Promise<any[]> => [],
+  dismissNotificationAsync: async (_id: string): Promise<void> => {},
   setNotificationHandler: () => {},
   setNotificationChannelAsync: async () => {},
   getPermissionsAsync: async () => ({ status: 'granted' }),

@@ -13,6 +13,18 @@ function runNotificationJob<T>(work: () => Promise<T>): Promise<T> {
   return job;
 }
 
+async function dismissPresentedNotifications(matches: (request: Notifications.NotificationRequest) => boolean): Promise<void> {
+  if (typeof Notifications.getPresentedNotificationsAsync !== 'function') return;
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    for (const notification of presented ?? []) {
+      if (matches(notification.request)) await Notifications.dismissNotificationAsync(notification.request.identifier);
+    }
+  } catch (error) {
+    console.warn('Falha ao remover avisos antigos da bandeja:', error);
+  }
+}
+
 async function cancelEventNotifications(eventId: string): Promise<void> {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const notification of scheduled ?? []) {
@@ -279,8 +291,16 @@ export const NotificationService = {
     events: AppEvent[], subjects: Subject[], attendances: AttendanceRecord[] = [], forceReschedule = false,
   ): Promise<void> {
     await runNotificationJob(async () => {
-      if (!(await this.requestPermissions())) return;
       const activeSubjects = new Set(subjects.filter(subject => !subject.isArchived).map(subject => subject.id));
+      const eventMap = new Map(events.filter(Boolean).map(event => [event.id, event]));
+      await dismissPresentedNotifications(request => {
+        const data = request.content.data;
+        const event = typeof data?.eventId === 'string' ? eventMap.get(data.eventId) : undefined;
+        return !!((data?.eventId && !event) ||
+          (event?.subjectId && !activeSubjects.has(event.subjectId)) ||
+          (typeof data?.subjectId === 'string' && !activeSubjects.has(data.subjectId)));
+      });
+      if (!(await this.requestPermissions())) return;
       const desired = new Map<string, Notifications.NotificationRequestInput>();
       for (const event of events) {
         if (!event?.id || (event.subjectId && !activeSubjects.has(event.subjectId))) continue;
@@ -334,14 +354,13 @@ export const NotificationService = {
     await runNotificationJob(async () => {
       try {
         const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-        if (!Array.isArray(scheduled) || scheduled.length === 0) return;
 
         const eventIdSet = new Set<string>(
           Array.isArray(eventIds) ? eventIds.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
         );
         const toCancel: string[] = [];
 
-        for (const notif of scheduled) {
+        for (const notif of Array.isArray(scheduled) ? scheduled : []) {
           const notifData = notif?.content?.data as { eventId?: string; subjectId?: string; category?: string } | undefined;
           if (!notifData || typeof notifData !== 'object') continue;
 
@@ -361,6 +380,11 @@ export const NotificationService = {
         if (toCancel.length > 0) {
           await Promise.all(toCancel.map(id => Notifications.cancelScheduledNotificationAsync(id)));
         }
+        await dismissPresentedNotifications(request => {
+          const data = request.content.data;
+          return !!((subjectId && data?.subjectId === subjectId) ||
+            (typeof data?.eventId === 'string' && eventIdSet.has(data.eventId)));
+        });
       } catch (e) {
         console.warn('Falha ao cancelar notificações da matéria em lote', subjectId, e);
       }

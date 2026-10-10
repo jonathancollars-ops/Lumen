@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AttendanceRecord, Subject, AppEvent, ThemeType } from '../types';
 import { getThemeColors, getContrastTextColor } from '../theme';
 import * as Haptics from 'expo-haptics';
+import { filterValidAttendances } from '../utils/attendanceValidity';
 
 interface Props {
   visible: boolean;
@@ -28,9 +29,10 @@ export const PendingAttendanceModal: React.FC<Props> = ({ visible, onClose, pend
     }
   };
 
-  const safePending = Array.isArray(pendingAttendances) ? pendingAttendances.filter(Boolean) : [];
   const safeSubjects = Array.isArray(subjects) ? subjects.filter(Boolean) : [];
   const safeEvents = Array.isArray(events) ? events.filter(Boolean) : [];
+  const safePending = filterValidAttendances(Array.isArray(pendingAttendances) ? pendingAttendances : [], safeSubjects, safeEvents)
+    .filter(record => record.status === 'pending');
 
   if (!visible && safePending.length === 0) return null;
 
@@ -62,11 +64,7 @@ export const PendingAttendanceModal: React.FC<Props> = ({ visible, onClose, pend
               </Text>
 
               {safePending.map(att => {
-                const subject = safeSubjects.find(s => s && s.id === att.subjectId) || {
-                  id: att.subjectId,
-                  name: 'Matéria',
-                  color: colors.primary
-                };
+                const subject = safeSubjects.find(s => s.id === att.subjectId)!;
                 const event = safeEvents.find(e => e && e.id === att.eventId);
 
                 return (

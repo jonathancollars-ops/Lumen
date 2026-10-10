@@ -129,9 +129,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   
   // App Lifecycle
   const [isInitializing, setIsInitializing] = useState(true);
+  const loadRevision = useRef(0);
 
   const loadData = async () => {
+    const revision = ++loadRevision.current;
     try {
+      await StorageService.repairSubjectRelations().catch(error => console.warn('Falha ao limpar vínculos de matérias removidas:', error));
       const [
         savedTheme,
         savedEvents,
@@ -171,7 +174,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Check for pending attendances safely
       let updatedAttendances = safeAttendances;
       try {
-        updatedAttendances = await AttendanceService.generatePendingAttendances(safeEvents, safeAttendances);
+        updatedAttendances = await AttendanceService.generatePendingAttendances(safeEvents, safeAttendances, safeSubjects);
       } catch (attError) {
         console.warn('AppContext: Attendance calculation error in loadData:', attError);
       }
@@ -235,6 +238,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         : { provider: 'gemini', mode: 'gemini_cloud', apiKey: '', model: 'gemini-3.6-flash', enableFallbackToCloud: true };
 
+      if (revision !== loadRevision.current) return;
       setTheme(safeTheme);
       setEvents(safeEvents);
       setSubjects(safeSubjects);
@@ -249,6 +253,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // Restauração com arquitetura de Timestamp Diff
       const restoredSaved = await serviceRestoreTimerState().catch(() => null);
+      if (revision !== loadRevision.current) return;
       let effectiveTimer: ActiveTimerState | null = null;
       if (restoredSaved) {
         setSavedTimer(restoredSaved);
@@ -453,12 +458,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateAttendance = async (record: AttendanceRecord) => {
-    const exists = attendances.find(a => a.id === record.id);
-    const updated = exists 
-      ? attendances.map(a => a.id === record.id ? record : a)
-      : [...attendances, record];
-    setAttendances(updated);
-    await StorageService.saveAttendances(updated);
+    if (!(await StorageService.saveAttendanceRecord(record))) return;
+    setAttendances(await StorageService.getAttendances());
     triggerDebouncedCloudSync();
   };
 
@@ -480,6 +481,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteSubject = async (subjectId: string) => {
     if (!subjectId || typeof subjectId !== 'string') return;
+    // Invalidate any hydration that still contains this subject.
+    loadRevision.current++;
 
     const targetSubject = subjects.find(s => s.id === subjectId);
     const targetSubjectName = targetSubject?.name?.trim().toLowerCase();
@@ -509,18 +512,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const removedEventIds = removedEvents.map(e => e.id);
     const updatedEvents = events.filter(e => !isSubjectEvent(e));
     const updatedSubjects = subjects.filter(s => s.id !== subjectId);
-    const updatedAttendances = attendances.filter(a => a.subjectId !== subjectId);
+    const updatedAttendances = attendances.filter(a => a.subjectId !== subjectId && !removedEventIds.includes(a.eventId));
     const updatedTasks = tasks.filter(t => t.subjectId !== subjectId);
 
     setSubjects(updatedSubjects);
     setEvents(updatedEvents);
     setAttendances(updatedAttendances);
     setTasks(updatedTasks);
+    setStudySessions(current => current.filter(session => session.subjectId !== subjectId));
+    const removedTimer = activeTimer?.subjectId === subjectId || savedTimer?.subjectId === subjectId;
+    if (removedTimer) {
+      setActiveTimer(null);
+      setSavedTimer(null);
+    }
 
-    await Promise.all([
-      StorageService.deleteSubject(subjectId),
-      NotificationService.cancelSubjectNotifications(subjectId, removedEventIds),
-    ]);
+    const deleted = await StorageService.deleteSubject(subjectId);
+    if (!deleted) {
+      await loadData();
+      throw new Error('Não foi possível excluir a matéria. Tente novamente.');
+    }
+    await NotificationService.cancelSubjectNotifications(subjectId, removedEventIds);
+    if (removedTimer) await NotificationService.cancelTimerNotification();
+    await loadData();
     triggerDebouncedCloudSync();
   };
 

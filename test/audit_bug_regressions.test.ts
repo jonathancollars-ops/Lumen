@@ -48,18 +48,23 @@ async function run(): Promise<void> {
     return 'test-notification';
   };
   await mockAsyncStorage.clear();
+  await mockAsyncStorage.setItem('@organiza_subjects', JSON.stringify([subject]));
+  await mockAsyncStorage.setItem('@organiza_events', JSON.stringify([event]));
 
   const records = await AttendanceService.generatePendingAttendances([event], []);
   assert.deepEqual(records.map(record => record.date).sort(), ['2026-10-05', '2026-10-07']);
   assert.equal((await AttendanceService.generatePendingAttendances([event], records)).length, 2);
   const cancelled = records.map(record => ({ ...record, status: 'cancelled' as const }));
+  await mockAsyncStorage.setItem('@organiza_attendances', JSON.stringify(cancelled));
   assert.deepEqual(await AttendanceService.generatePendingAttendances([event], cancelled), cancelled);
+  await mockAsyncStorage.removeItem('@organiza_attendances');
   const explicitDays = await AttendanceService.generatePendingAttendances([
     { ...event, recurrenceDays: [3, 3, -1, 9] },
   ], []);
   assert.deepEqual(explicitDays.map(record => record.date), ['2026-10-07']);
 
   clock = new RealDate('2026-10-06T10:00:00').getTime();
+  await mockAsyncStorage.removeItem('@organiza_attendances');
   const morning = { ...event, date: '2026-10-06', recurrenceDays: undefined };
   assert.deepEqual((await AttendanceService.generatePendingAttendances([morning], [])).map(r => r.date), ['2026-10-06']);
   assert.equal((await AttendanceService.generatePendingAttendances([{ ...morning, endTime: '11:00' }], [])).length, 0);

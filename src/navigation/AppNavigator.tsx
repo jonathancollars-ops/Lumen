@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, ScrollView, Animated } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, DefaultTheme, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -36,6 +36,125 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const Tab = createBottomTabNavigator();
 
+interface SidebarNavItemProps {
+  routeKey: string;
+  name: string;
+  icon: string;
+  isFocused: boolean;
+  onPress: () => void;
+  colors: ReturnType<typeof getThemeColors>;
+  isDark: boolean;
+}
+
+const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
+  name,
+  icon,
+  isFocused,
+  onPress,
+  colors,
+  isDark,
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      // @ts-ignore
+      onMouseEnter={() => setIsHovered(true)}
+      // @ts-ignore
+      onMouseLeave={() => setIsHovered(false)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isFocused }}
+      style={[
+        styles.sidebarNavItem,
+        isFocused
+          ? {
+              backgroundColor: colors.primaryLight,
+            }
+          : {
+              backgroundColor: isHovered
+                ? (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.035)')
+                : 'transparent',
+            },
+        Platform.OS === 'web' && ({
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'background-color 0.15s ease, opacity 0.15s ease',
+        } as any),
+      ]}
+    >
+      <View style={styles.sidebarNavIconWrap}>
+        <Text style={{ fontSize: 16 }}>{icon}</Text>
+      </View>
+      <Text
+        style={[
+          styles.sidebarNavLabel,
+          {
+            color: isFocused ? colors.primary : (isHovered ? colors.text : colors.textSecondary),
+            fontWeight: isFocused ? '600' : '500',
+          }
+        ]}
+      >
+        {name}
+      </Text>
+    </TouchableOpacity>
+  );
+};
+
+interface SidebarDockBtnProps {
+  icon: string;
+  title: string;
+  onPress: () => void;
+  colors: ReturnType<typeof getThemeColors>;
+  isDark: boolean;
+}
+
+const SidebarDockBtn: React.FC<SidebarDockBtnProps> = ({
+  icon,
+  title,
+  onPress,
+  colors,
+  isDark,
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        try { Haptics.selectionAsync(); } catch {}
+        onPress();
+      }}
+      // @ts-ignore
+      onMouseEnter={() => setIsHovered(true)}
+      // @ts-ignore
+      onMouseLeave={() => setIsHovered(false)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      // @ts-ignore
+      title={title}
+      style={[
+        styles.sidebarDockBtn,
+        {
+          backgroundColor: isHovered
+            ? (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)')
+            : (isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'),
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+        },
+        Platform.OS === 'web' && ({
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'all 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+          transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+        } as any),
+      ]}
+    >
+      <Text style={{ fontSize: 16 }}>{icon}</Text>
+    </TouchableOpacity>
+  );
+};
+
 export function AppNavigator() {
   const { theme, settings, setSettings, gamification, isInitializing, handleThemeToggle, events, subjects, studySessions, attendances, streak, semesters, setSemesters, refreshData, aiConfig, updateAIConfig, syncCloudNow, cloudSyncStatus } = useApp();
   const colors = getThemeColors(theme);
@@ -43,10 +162,17 @@ export function AppNavigator() {
   const { isDesktop } = useResponsive();
   const navigationRef = useNavigationContainerRef<{ Agenda: undefined; Faltas: undefined }>();
   const pendingNotification = useRef<Record<string, unknown> | null>(null);
+  const notificationRelations = useRef({ events, subjects });
+  notificationRelations.current = { events, subjects };
   const openNotification = () => {
     if (!navigationRef.isReady() || !pendingNotification.current) return;
     const data = pendingNotification.current;
     pendingNotification.current = null;
+    const current = notificationRelations.current;
+    const event = current.events.find(event => event.id === data.eventId);
+    if (data.eventId && !event) return;
+    const subjectId = data.subjectId || event?.subjectId;
+    if (subjectId && !current.subjects.some(subject => subject.id === subjectId && !subject.isArchived)) return;
     navigationRef.navigate(data.type === 'attendance_reminder' ? 'Faltas' : 'Agenda');
     void refreshData();
   };
@@ -187,80 +313,77 @@ export function AppNavigator() {
    * Em telas <= 1024px (mobile / tablet estreito): renderiza Floating Glass Tab Bar clássica no estilo iOS 18.
    */
   const ResponsiveTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, navigation }) => {
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 0.35,
+            duration: 900,
+            useNativeDriver: false,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 900,
+            useNativeDriver: false,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }, [pulseAnim]);
+
     if (isDesktop) {
+      const isCloudSyncing = Boolean(cloudSyncStatus?.isSyncing || cloudSyncStatus?.state === 'syncing');
+
       return (
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, paddingTop: 24, paddingBottom: 24, paddingHorizontal: 16 }}
+        <View
           style={[
             styles.sidebarContainer,
             {
               backgroundColor: isDark
-                ? (theme === 'amoled' ? 'rgba(0, 0, 0, 0.90)' : 'rgba(11, 15, 25, 0.85)')
-                : 'rgba(248, 249, 250, 0.88)',
+                ? (theme === 'amoled' ? 'rgba(0, 0, 0, 0.92)' : 'rgba(15, 17, 23, 0.82)')
+                : 'rgba(248, 249, 250, 0.82)',
               borderRightColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'),
-              ...(Platform.OS === 'web' ? { backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' } as any : {})
+              ...(Platform.OS === 'web' ? { backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)' } as any : {})
             }
           ]}
         >
-          {/* Header do Menu Lateral Desktop (macOS Sonoma Style) */}
+          {/* Header Minimalista (macOS Sonoma / Apple HIG) */}
           <View style={styles.sidebarHeader}>
-            <View style={[styles.logoIconBadge, { backgroundColor: colors.primaryLight, width: 40, height: 40, borderRadius: 12 }]}>
-              <Text style={{ fontSize: 20 }}>🎓</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: colors.text, fontSize: 19, letterSpacing: -0.5 }]}>Lumen</Text>
-              <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '600' }}>Workspace Acadêmico</Text>
-            </View>
-          </View>
-
-          {/* Badge Modo Provas */}
-          {settings.examWeekMode && (
-            <View style={[styles.sidebarExamBadge, { backgroundColor: colors.dangerLight, borderColor: colors.danger }]}>
-              <Text style={{ color: colors.danger, fontSize: 11, fontWeight: '800' }}>🎯 MODO PROVAS ATIVO</Text>
-            </View>
-          )}
-
-          {/* Badge Sutil de Nível Acadêmico com Gradiente Lavanda Suave */}
-          <TouchableOpacity
-            style={[
-              styles.sidebarGamificationCard,
-              {
-                backgroundColor: isDark ? 'rgba(139, 92, 246, 0.12)' : 'rgba(139, 92, 246, 0.08)',
-                borderColor: isDark ? 'rgba(167, 139, 250, 0.25)' : 'rgba(139, 92, 246, 0.20)',
-              }
-            ]}
-            onPress={() => {
-              try { Haptics.selectionAsync(); } catch {}
-              setAchievementsModalVisible(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={[styles.sidebarLavenderDot, { backgroundColor: isDark ? '#A78BFA' : '#7C3AED' }]} />
-                <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#C4B5FD' : '#6D28D9' }}>
-                  Nv. {gamification?.level || 1} Acadêmico
-                </Text>
+            <View style={styles.sidebarLogoWrap}>
+              <View style={[styles.sidebarLogoIconBadge, { backgroundColor: colors.primaryLight }]}>
+                <Text style={{ fontSize: 14 }}>🎓</Text>
               </View>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#A78BFA' : '#7C3AED' }}>
-                {gamification?.xp || 0} XP
-              </Text>
+              <Text style={[styles.sidebarAppTitle, { color: colors.text }]}>Lumen</Text>
             </View>
-            <View style={[styles.sidebarXpTrack, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.18)' : 'rgba(139, 92, 246, 0.12)' }]}>
+
+            {settings.examWeekMode && (
               <View
                 style={[
-                  styles.sidebarXpFill,
+                  styles.sidebarExamMiniBadge,
                   {
-                    backgroundColor: isDark ? '#A78BFA' : '#7C3AED',
-                    width: `${Math.min(100, Math.max(10, ((gamification?.xp || 0) % 100)))}%`
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : colors.dangerLight,
+                    borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.25)',
                   }
                 ]}
-              />
-            </View>
-          </TouchableOpacity>
+                accessibilityLabel="Modo Provas Ativo"
+                // @ts-ignore
+                title="Modo Provas Ativo"
+              >
+                <View style={[styles.sidebarExamMiniDot, { backgroundColor: colors.danger }]} />
+                <Text style={[styles.sidebarExamMiniText, { color: colors.danger }]}>Provas</Text>
+              </View>
+            )}
+          </View>
 
-          {/* Lista de Navegação Vertical com Ícones Refinados */}
-          <View style={styles.sidebarNavList}>
+          {/* Lista de Navegação (Navigation Items) */}
+          <ScrollView
+            style={styles.sidebarNavScroll}
+            contentContainerStyle={styles.sidebarNavScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
             <Text style={[styles.sidebarSectionLabel, { color: colors.textSecondary }]}>NAVEGAÇÃO</Text>
             {state.routes.map((route, index) => {
               const isFocused = state.index === index;
@@ -283,136 +406,115 @@ export function AppNavigator() {
               else if (route.name === 'Notas') icon = '🎓';
 
               return (
-                <TouchableOpacity
+                <SidebarNavItem
                   key={route.key}
+                  routeKey={route.key}
+                  name={route.name}
+                  icon={icon}
+                  isFocused={isFocused}
                   onPress={onPress}
-                  activeOpacity={0.7}
-                  style={[
-                    styles.sidebarNavItem,
-                    isFocused
-                      ? {
-                          backgroundColor: colors.primaryLight,
-                          borderColor: colors.primary,
-                        }
-                      : {
-                          backgroundColor: 'transparent',
-                          borderColor: 'transparent',
-                        }
-                  ]}
-                >
-                  {isFocused && <View style={[styles.sidebarActiveBar, { backgroundColor: colors.primary }]} />}
-                  <Text style={{ fontSize: 18, marginRight: 12 }}>{icon}</Text>
-                  <Text
-                    style={[
-                      styles.sidebarNavLabel,
-                      { color: isFocused ? colors.primary : colors.text, fontWeight: isFocused ? '800' : '600' }
-                    ]}
-                  >
-                    {route.name}
-                  </Text>
-                </TouchableOpacity>
+                  colors={colors}
+                  isDark={isDark}
+                />
               );
             })}
-          </View>
+          </ScrollView>
 
-          {/* Rodapé do Sidebar com Indicador Cloud Sync & Ferramentas */}
+          {/* Rodapé Utilitário Integrado (Cloud Sync, Gamificação & Icon Utility Dock) */}
           <View style={[styles.sidebarFooter, { borderTopColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') }]}>
-            {/* Indicador Elegante de Status do Cloud Sync */}
-            {(() => {
-              const isCloudSyncing = Boolean(cloudSyncStatus?.isSyncing || cloudSyncStatus?.state === 'syncing');
-              return (
-                <TouchableOpacity
+            {/* Status Compacto: Nível / XP + Cloud Sync */}
+            <View
+              style={[
+                styles.sidebarStatusPill,
+                {
+                  backgroundColor: colors.surfaceSubtle,
+                  borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'),
+                }
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.sidebarStatusLevelSector}
+                onPress={() => {
+                  try { Haptics.selectionAsync(); } catch {}
+                  setAchievementsModalVisible(true);
+                }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Nível ${gamification?.level || 1}, ${gamification?.xp || 0} XP. Abrir Conquistas.`}
+                // @ts-ignore
+                title="Conquistas e Nível Acadêmico"
+              >
+                <View style={[styles.sidebarLevelMiniDot, { backgroundColor: isDark ? '#A78BFA' : '#7C3AED' }]} />
+                <Text style={[styles.sidebarStatusLevelText, { color: isDark ? '#DDD6FE' : '#6D28D9' }]}>
+                  Nv. {gamification?.level || 1}
+                </Text>
+                <Text style={[styles.sidebarStatusXpText, { color: colors.textSecondary }]}>
+                  • {gamification?.xp || 0} XP
+                </Text>
+              </TouchableOpacity>
+
+              <View style={[styles.sidebarStatusDivider, { backgroundColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') }]} />
+
+              <TouchableOpacity
+                style={styles.sidebarStatusSyncSector}
+                onPress={async () => {
+                  try { Haptics.selectionAsync(); } catch {}
+                  if (syncCloudNow) {
+                    await syncCloudNow();
+                  }
+                }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={isCloudSyncing ? 'Sincronizando com a nuvem...' : 'Cloud Sync Conectado'}
+                // @ts-ignore
+                title={isCloudSyncing ? 'Sincronizando com a nuvem...' : 'Cloud Sync Conectado (Clique para sincronizar)'}
+              >
+                <Text style={{ fontSize: 13 }}>☁️</Text>
+                <Animated.View
                   style={[
-                    styles.sidebarCloudSyncCard,
+                    styles.sidebarSyncDot,
                     {
-                      backgroundColor: colors.surfaceSubtle,
-                      borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'),
+                      backgroundColor: isCloudSyncing ? colors.warning : colors.success,
+                      opacity: pulseAnim,
                     }
                   ]}
-                  onPress={async () => {
-                    try { Haptics.selectionAsync(); } catch {}
-                    if (syncCloudNow) {
-                      await syncCloudNow();
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16 }}>☁️</Text>
-                      <View>
-                        <Text style={[styles.sidebarCloudSyncTitle, { color: colors.text }]}>Cloud Sync</Text>
-                        <Text style={{ fontSize: 10, color: colors.textSecondary }}>
-                          {isCloudSyncing ? 'Sincronizando...' : 'Conectado e Seguro'}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={[
-                      styles.sidebarCloudSyncBadge,
-                      {
-                        backgroundColor: isCloudSyncing ? colors.warningLight : colors.successLight,
-                        borderColor: isCloudSyncing ? colors.warning : colors.success
-                      }
-                    ]}>
-                      <View style={[
-                        styles.sidebarCloudDot,
-                        { backgroundColor: isCloudSyncing ? colors.warning : colors.success }
-                      ]} />
-                      <Text style={[
-                        styles.sidebarCloudBadgeText,
-                        { color: isCloudSyncing ? colors.warningDark : colors.successDark }
-                      ]}>
-                        {isCloudSyncing ? 'Sync' : 'Ativo'}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })()}
+                />
+              </TouchableOpacity>
+            </View>
 
-            <Text style={[styles.sidebarSectionLabel, { color: colors.textSecondary, marginBottom: 8 }]}>FERRAMENTAS</Text>
-            
-            <TouchableOpacity
-              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') }]}
-              onPress={() => setGroupProjectsModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={{ fontSize: 16, marginRight: 10 }}>👥</Text>
-              <Text style={[styles.sidebarActionText, { color: colors.text }]}>Projetos em Grupo</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') }]}
-              onPress={() => setAnalyticsModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={{ fontSize: 16, marginRight: 10 }}>📈</Text>
-              <Text style={[styles.sidebarActionText, { color: colors.text }]}>Análise & AACC</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') }]}
-              onPress={() => setSettingsModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={{ fontSize: 16, marginRight: 10 }}>⚙️</Text>
-              <Text style={[styles.sidebarActionText, { color: colors.text }]}>Configurações</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.sidebarActionBtn, { backgroundColor: colors.surfaceSubtle, borderColor: colors.specularBorder || (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)') }]}
-              onPress={handleThemeToggle}
-              activeOpacity={0.7}
-            >
-              <Text style={{ fontSize: 16, marginRight: 10 }}>
-                {theme === 'dark' ? '🌙' : theme === 'amoled' ? '🖤' : '☀️'}
-              </Text>
-              <Text style={[styles.sidebarActionText, { color: colors.text }]}>
-                {theme === 'dark' ? 'Tema Escuro' : theme === 'amoled' ? 'Tema AMOLED' : 'Tema Claro'}
-              </Text>
-            </TouchableOpacity>
+            {/* Barra de Ações Rápidas (Icon Utility Dock) */}
+            <View style={styles.sidebarDock}>
+              <SidebarDockBtn
+                icon="👥"
+                title="Projetos em Grupo"
+                onPress={() => setGroupProjectsModalVisible(true)}
+                colors={colors}
+                isDark={isDark}
+              />
+              <SidebarDockBtn
+                icon="📈"
+                title="Análise & AACC"
+                onPress={() => setAnalyticsModalVisible(true)}
+                colors={colors}
+                isDark={isDark}
+              />
+              <SidebarDockBtn
+                icon="⚙️"
+                title="Configurações"
+                onPress={() => setSettingsModalVisible(true)}
+                colors={colors}
+                isDark={isDark}
+              />
+              <SidebarDockBtn
+                icon={theme === 'dark' ? '🌙' : theme === 'amoled' ? '🖤' : '☀️'}
+                title={theme === 'dark' ? 'Tema Escuro (Clique para alterar)' : theme === 'amoled' ? 'Tema AMOLED (Clique para alterar)' : 'Tema Claro (Clique para alterar)'}
+                onPress={handleThemeToggle}
+                colors={colors}
+                isDark={isDark}
+              />
+            </View>
           </View>
-        </ScrollView>
+        </View>
       );
     }
 
@@ -607,7 +709,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Desktop Sidebar Styles
+  // Desktop Sidebar Styles (macOS Sonoma / Apple HIG & Impeccable)
   sidebarContainer: {
     position: 'absolute',
     left: 0,
@@ -615,120 +717,164 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 260,
     borderRightWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingTop: 18,
+    paddingBottom: 16,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
     zIndex: 100,
   },
   sidebarHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    marginBottom: 14,
+  },
+  sidebarLogoWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  sidebarLogoIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sidebarAppTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: -0.4,
+  },
+  sidebarExamMiniBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4.5,
+    paddingHorizontal: 6.5,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  sidebarExamMiniDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  sidebarExamMiniText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  sidebarNavScroll: {
+    flex: 1,
+    marginHorizontal: -4,
     paddingHorizontal: 4,
   },
-  sidebarExamBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  sidebarGamificationCard: {
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 20,
-  },
-  sidebarLavenderDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  sidebarXpTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  sidebarXpFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  sidebarNavList: {
-    flex: 1,
-    gap: 4,
+  sidebarNavScrollContent: {
+    paddingVertical: 4,
   },
   sidebarSectionLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 10.5,
+    fontWeight: '600',
     letterSpacing: 0.8,
-    marginBottom: 8,
-    paddingHorizontal: 6,
+    textTransform: 'uppercase',
+    paddingHorizontal: 8,
+    marginBottom: 6,
+    opacity: 0.7,
   },
   sidebarNavItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    position: 'relative',
+    paddingVertical: 7.5,
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    marginVertical: 1,
   },
-  sidebarActiveBar: {
-    position: 'absolute',
-    left: 0,
-    top: 8,
-    bottom: 8,
-    width: 3.5,
-    borderRadius: 2,
+  sidebarNavIconWrap: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
   },
   sidebarNavLabel: {
-    fontSize: 14,
-    letterSpacing: 0.2,
+    fontSize: 13.5,
+    letterSpacing: -0.2,
   },
   sidebarFooter: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 16,
-    gap: 6,
+    paddingTop: 12,
+    gap: 8,
   },
-  sidebarCloudSyncCard: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 10,
-  },
-  sidebarCloudSyncTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  sidebarCloudSyncBadge: {
+  sidebarStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    justifyContent: 'space-between',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  sidebarCloudDot: {
+  sidebarStatusLevelSector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5.5,
+    flex: 1,
+    ...(Platform.OS === 'web' ? ({
+      cursor: 'pointer',
+      userSelect: 'none',
+    } as any) : {}),
+  },
+  sidebarLevelMiniDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
   },
-  sidebarCloudBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
+  sidebarStatusLevelText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
-  sidebarActionBtn: {
+  sidebarStatusXpText: {
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: -0.1,
+  },
+  sidebarStatusDivider: {
+    width: 1,
+    height: 14,
+    marginHorizontal: 8,
+  },
+  sidebarStatusSyncSector: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    gap: 5,
+    paddingVertical: 2,
+    ...(Platform.OS === 'web' ? ({
+      cursor: 'pointer',
+      userSelect: 'none',
+    } as any) : {}),
   },
-  sidebarActionText: {
-    fontSize: 13,
-    fontWeight: '600',
+  sidebarSyncDot: {
+    width: 6.5,
+    height: 6.5,
+    borderRadius: 3.5,
+  },
+  sidebarDock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  sidebarDockBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Mobile Bottom Tab Bar Styles

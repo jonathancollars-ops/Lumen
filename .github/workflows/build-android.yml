@@ -46,6 +46,16 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Verify Android Signing Configuration Before Publishing
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: node scripts/sign_android_release.js --check
+
       - name: ⚙️ Setup Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -90,46 +100,18 @@ jobs:
           ./gradlew assembleRelease --stacktrace --no-daemon \
             -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError" 2>&1 | tee ../gradle_build.log
 
-      - name: 🛡️ Sign APK with Official Release Keystore (Google Play Protect Compliant)
+      - name: Sign and Verify APK with the Existing Release Certificate
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "🔑 Preparing official release signature..."
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
-            
-            RAW_APK=$(find android/app/build/outputs/apk -name "*.apk" ! -name "*unaligned*" | head -n 1)
-            if [ -n "$RAW_APK" ] && [ -f "$RAW_APK" ]; then
-              echo "📦 Aligning and signing APK ($RAW_APK) with official release certificate..."
-              BUILD_TOOLS_DIR=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
-              APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
-              ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
-              
-              $ZIPALIGN -c -v 4 "$RAW_APK" || {
-                $ZIPALIGN -f -v 4 "$RAW_APK" aligned.apk
-                mv aligned.apk "$RAW_APK"
-              }
-              
-              $APKSIGNER sign --ks release.keystore \
-                --ks-key-alias "${ANDROID_KEY_ALIAS:-lumen-release-key}" \
-                --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
-                --key-pass pass:"$ANDROID_KEY_PASSWORD" \
-                --v1-signing-enabled true \
-                --v2-signing-enabled true \
-                --v3-signing-enabled true \
-                "$RAW_APK"
-              
-              echo "✅ Verifying production APK signature:"
-              $APKSIGNER verify --verbose "$RAW_APK"
-              rm -f release.keystore
-              echo "🎉 Official production signature applied successfully!"
-            fi
-          else
-            echo "ℹ️ ANDROID_KEYSTORE_BASE64 secret not set. Skipping custom signing (using standard build)."
-          fi
+          set -euo pipefail
+          RAW_APK=android/app/build/outputs/apk/release/app-release.apk
+          node scripts/sign_android_release.js "$RAW_APK"
 
       - name: 📋 Prepare Artifacts & Calculate Checksums
         id: prepare-artifact
@@ -142,7 +124,7 @@ jobs:
           node scripts/extract_release_notes.js "$APP_VER" build-output/RELEASE_NOTES.md
 
           # Locate generated APK across android outputs
-          APK_FILE=$(find android -name "*.apk" ! -name "*unaligned*" | head -n 1)
+          APK_FILE=android/app/build/outputs/apk/release/app-release.apk
           if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
             TARGET_APK="build-output/lumen-v${APP_VER}-standalone.apk"
             cp "$APK_FILE" "$TARGET_APK"

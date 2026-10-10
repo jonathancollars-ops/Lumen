@@ -11,6 +11,18 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [Unreleased]
+### Matérias removidas e presenças
+- Remove aulas, presenças, tarefas, sessões de estudo, projetos vinculados e timers da matéria excluída em uma operação serializada com a sincronização.
+- Confere a existência da matéria antes de gerar, gravar ou exibir presenças pendentes; elimina vínculos órfãos antigos ao carregar os dados.
+- Preserva presenças já confirmadas durante gerações concorrentes e ignora cliques em notificações de matérias removidas.
+- Cancela lembretes futuros e remove da bandeja os avisos vinculados à matéria apagada.
+
+### Assinatura de distribuição
+- Bloqueia publicação Android sem credenciais de assinatura ou com certificado diferente do configurado para o APK já distribuído.
+- Prepara assinatura Authenticode do aplicativo e dos instaladores Windows via Azure Artifact Signing/OIDC, com verificação e timestamp antes da publicação. Depende da configuração da conta e das variáveis descritas em RELEASE_SIGNING.md.
+- Assinatura não garante a remoção dos avisos do Play Protect ou SmartScreen.
+
 ## [3.7.9] - 2026-10-09
 ### Ícone dos atalhos no Windows
 - O instalador EXE usa um arquivo de ícone com o número da versão e atualiza os atalhos existentes do desktop e do menu Iniciar. Isso evita reutilizar a imagem antiga do executável no cache do Windows.
