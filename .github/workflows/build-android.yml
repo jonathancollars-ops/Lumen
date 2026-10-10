@@ -54,7 +54,12 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
-        run: node scripts/sign_android_release.js --check
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            node scripts/sign_android_release.js --check
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not configured. Release APK will use standard Expo release signature."
+          fi
 
       - name: ⚙️ Setup Node.js 20
         uses: actions/setup-node@v4
@@ -110,8 +115,14 @@ jobs:
           ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          RAW_APK=android/app/build/outputs/apk/release/app-release.apk
-          node scripts/sign_android_release.js "$RAW_APK"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            RAW_APK=$(find android/app/build/outputs/apk -name "*.apk" ! -name "*unaligned*" 2>/dev/null | head -n 1 || find android -name "*.apk" ! -name "*unaligned*" | head -n 1)
+            if [ -n "$RAW_APK" ] && [ -f "$RAW_APK" ]; then
+              node scripts/sign_android_release.js "$RAW_APK"
+            fi
+          else
+            echo "ℹ️ ANDROID_KEYSTORE_BASE64 is not configured. Skipping custom release signing."
+          fi
 
       - name: 📋 Prepare Artifacts & Calculate Checksums
         id: prepare-artifact
@@ -124,7 +135,7 @@ jobs:
           node scripts/extract_release_notes.js "$APP_VER" build-output/RELEASE_NOTES.md
 
           # Locate generated APK across android outputs
-          APK_FILE=android/app/build/outputs/apk/release/app-release.apk
+          APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" ! -name "*unaligned*" 2>/dev/null | head -n 1 || find android -name "*.apk" ! -name "*unaligned*" | head -n 1)
           if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
             TARGET_APK="build-output/lumen-v${APP_VER}-standalone.apk"
             cp "$APK_FILE" "$TARGET_APK"
