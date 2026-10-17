@@ -151,6 +151,7 @@ export const StudyScreen: React.FC<Props> = ({
     newStreak.lastStudyDate = todayStr;
 
     setStreak(newStreak);
+    appContext?.setStreak?.(newStreak);
     await StorageService.saveStreak(newStreak);
   };
 
@@ -197,6 +198,7 @@ export const StudyScreen: React.FC<Props> = ({
       await updateStreakOnSessionSaved();
       const updatedGamification = await StorageService.addXP(50, sessionDurationMin);
       setGamification(updatedGamification);
+      appContext?.setGamification?.(updatedGamification);
       showToast(`🎉 Sessão de ${sessionDurationMin}min concluída! (+50 XP) Hora do descanso.`, 'success');
       setIsBreak(true);
       setTimeLeft(breakMinutesDefault * 60);
@@ -246,7 +248,7 @@ export const StudyScreen: React.FC<Props> = ({
         }
       } else if (isPomo) {
         const currentSecondsRemaining = timeLeftRef.current;
-        const targetDuration = (activeFocusMinutesRef.current || focusMinutesDefaultRef.current) * 60;
+        const targetDuration = (isBreakRef.current ? breakMinutesDefaultRef.current : (activeFocusMinutesRef.current || focusMinutesDefaultRef.current)) * 60;
         const accumulated = Math.max(0, targetDuration - currentSecondsRemaining);
         const subId = selectedSubjectIdRef.current || undefined;
         const stateToSave: SavedTimerState = {
@@ -292,7 +294,7 @@ export const StudyScreen: React.FC<Props> = ({
             await appContext.saveTimerState(stateToSave);
           }
         } else if (currentTab === 'pomodoro') {
-          const targetDuration = (activeFocusMinutesRef.current || focusMinutesDefaultRef.current) * 60;
+          const targetDuration = (isBreakRef.current ? breakMinutesDefaultRef.current : (activeFocusMinutesRef.current || focusMinutesDefaultRef.current)) * 60;
           if (timeLeftRef.current < targetDuration) {
             const accumulated = Math.max(0, targetDuration - timeLeftRef.current);
             const stateToSave: SavedTimerState = {
@@ -473,9 +475,10 @@ export const StudyScreen: React.FC<Props> = ({
     };
   }, [navigation, saveCurrentTimerOnBackground, syncTimerFromTimestamps]);
 
-  // Tab switch handler: unconditionally clear active intervals when moving between tabs
-  const handleTabChange = (newTab: 'pomodoro' | 'cronometro' | 'tarefas') => {
+  // Tab switch handler: save current timer state before switching tabs and restoring
+  const handleTabChange = async (newTab: 'pomodoro' | 'cronometro' | 'tarefas') => {
     if (newTab !== activeTab) {
+      await saveCurrentTimerOnBackground();
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -485,7 +488,7 @@ export const StudyScreen: React.FC<Props> = ({
         stopwatchRef.current = null;
       }
       setActiveTab(newTab);
-      syncTimerFromTimestamps();
+      await syncTimerFromTimestamps();
     }
   };
 
@@ -728,6 +731,7 @@ export const StudyScreen: React.FC<Props> = ({
     const xpGained = Math.max(10, Math.round(minutes * 2));
     const updatedGamification = await StorageService.addXP(xpGained, minutes);
     setGamification(updatedGamification);
+    appContext?.setGamification?.(updatedGamification);
     showToast(`🎉 Sessão de ${minutes} min salva! (+${xpGained} XP)`, 'success');
 
     setIsStopwatchRunning(false);
@@ -802,6 +806,7 @@ export const StudyScreen: React.FC<Props> = ({
     if (willComplete) {
       const g = await StorageService.addXP(30);
       setGamification(g);
+      appContext?.setGamification?.(g);
       showToast('Tarefa concluída! (+30 XP) 🎯', 'success');
     }
   };

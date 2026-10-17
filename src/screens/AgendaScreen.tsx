@@ -306,9 +306,10 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
   const subjectAttendanceSummary = useMemo(() => {
     if (!highlightInfo.featuredSubject) return 'Frequência: regular';
     const subAtts = attendances.filter(a => a.subjectId === highlightInfo.featuredSubject?.id);
-    if (subAtts.length === 0) return 'Frequência: regular';
-    const presents = subAtts.filter(a => a.status === 'present').length;
-    const rate = Math.round((presents / subAtts.length) * 100);
+    const confirmed = subAtts.filter(a => a.status === 'present' || a.status === 'absent');
+    if (confirmed.length === 0) return 'Frequência: regular';
+    const presents = confirmed.filter(a => a.status === 'present').length;
+    const rate = Math.round((presents / confirmed.length) * 100);
     return rate >= 75 ? `Frequência: ${rate}% (regular)` : `Frequência: ${rate}% (atenção)`;
   }, [highlightInfo.featuredSubject, attendances]);
 
@@ -354,6 +355,21 @@ export const AgendaScreen: React.FC<AgendaScreenProps> = ({
               marks[dateStr].dots.push({ color: dotColor, key: `${e.id}_${dateStr}_${marks[dateStr].dots.length}` });
             }
           }
+        }
+      } else if (e.recurrence === 'weekly' && Array.isArray(e.recurrenceDays) && e.recurrenceDays.length > 0) {
+        let currentDate = parseISO(startDateClean);
+        if (isNaN(currentDate.getTime())) return;
+
+        const totalDays = 30 * 7;
+        for (let i = 0; i < totalDays; i++) {
+          if (e.recurrenceDays.includes(currentDate.getDay())) {
+            const dateStr = format(currentDate, 'yyyy-MM-dd');
+            if (!marks[dateStr]) marks[dateStr] = { dots: [] };
+            if (marks[dateStr].dots && marks[dateStr].dots.length < 3) {
+              marks[dateStr].dots.push({ color: dotColor, key: `${e.id}_${dateStr}_${marks[dateStr].dots.length}` });
+            }
+          }
+          currentDate = addDays(currentDate, 1);
         }
       } else {
         let currentDate = parseISO(startDateClean);

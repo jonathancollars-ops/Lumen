@@ -266,6 +266,11 @@ export class AppUpdateService {
    */
   public static cancelDesktopDownload(): void {
     this.desktopDownloadCancelled = true;
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      void import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('cancel_desktop_installer_download'))
+        .catch(() => {});
+    }
   }
 
   /**

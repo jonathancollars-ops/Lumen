@@ -1,7 +1,10 @@
 use std::fs::File;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::Emitter;
+
+static DESKTOP_DOWNLOAD_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,16 +14,39 @@ pub struct DesktopUpdateProgress {
     pub downloaded_bytes: u64,
 }
 
+fn is_trusted_update_host(host: Option<&str>) -> bool {
+    match host.map(|h| h.to_ascii_lowercase()) {
+        Some(h) => {
+            h == "github.com"
+                || h == "api.github.com"
+                || h == "objects.githubusercontent.com"
+                || h == "release-assets.githubusercontent.com"
+                || h.ends_with(".github.com")
+                || h.ends_with(".githubusercontent.com")
+        }
+        None => false,
+    }
+}
+
+#[tauri::command]
+pub fn cancel_desktop_installer_download() {
+    DESKTOP_DOWNLOAD_CANCELLED.store(true, Ordering::SeqCst);
+}
+
 #[tauri::command]
 pub async fn download_and_run_desktop_installer(
     app: tauri::AppHandle,
     url: String,
 ) -> Result<(), String> {
+    DESKTOP_DOWNLOAD_CANCELLED.store(false, Ordering::SeqCst);
     log::info!("[DesktopUpdater] Iniciando download da atualização: {}", url);
 
     let parsed_url = url::Url::parse(&url).map_err(|e| format!("URL inválida: {e}"))?;
     if parsed_url.scheme() != "https" {
         return Err("Apenas downloads seguros HTTPS são permitidos.".into());
+    }
+    if !is_trusted_update_host(parsed_url.host_str()) {
+        return Err("Domínio de atualização não autorizado. Apenas releases oficiais do GitHub são permitidas.".into());
     }
 
     let filename = parsed_url
@@ -63,6 +89,10 @@ pub async fn download_and_run_desktop_installer(
         return Err(format!("Download falhou com status HTTP {}", response.status()));
     }
 
+    if !is_trusted_update_host(response.url().host_str()) {
+        return Err("Redirecionamento para domínio não autorizado bloqueado.".into());
+    }
+
     let total_bytes = response.content_length().unwrap_or(0);
     let mut file = File::create(&installer_path)
         .map_err(|e| format!("Falha ao criar arquivo temporário: {e}"))?;
@@ -74,6 +104,12 @@ pub async fn download_and_run_desktop_installer(
         .await
         .map_err(|e| format!("Erro durante o download do instalador: {e}"))?
     {
+        if DESKTOP_DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
+            drop(file);
+            let _ = std::fs::remove_file(&installer_path);
+            return Err("Download cancelado pelo usuário.".into());
+        }
+
         file.write_all(&chunk)
             .map_err(|e| format!("Erro ao gravar dados no disco: {e}"))?;
         downloaded_bytes += chunk.len() as u64;
@@ -98,7 +134,13 @@ pub async fn download_and_run_desktop_installer(
         .map_err(|e| format!("Falha ao finalizar gravação do arquivo: {e}"))?;
     drop(file);
 
+    if DESKTOP_DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
+        let _ = std::fs::remove_file(&installer_path);
+        return Err("Download cancelado pelo usuário.".into());
+    }
+
     if downloaded_bytes == 0 {
+        let _ = std::fs::remove_file(&installer_path);
         return Err("O arquivo baixado está vazio (0 bytes).".into());
     }
 

@@ -172,6 +172,12 @@ function decodeBase64(input: string): string {
     } else if (c > 191 && c < 224) {
       const c2 = bytes[j++];
       out += String.fromCharCode(((c & 31) << 6) | (c2 & 63));
+    } else if (c >= 240) {
+      const c2 = bytes[j++];
+      const c3 = bytes[j++];
+      const c4 = bytes[j++];
+      const codePoint = (((c & 7) << 18) | ((c2 & 63) << 12) | ((c3 & 63) << 6) | (c4 & 63)) - 0x10000;
+      out += String.fromCharCode(0xd800 + (codePoint >> 10), 0xdc00 + (codePoint & 0x3ff));
     } else {
       const c2 = bytes[j++];
       const c3 = bytes[j++];
@@ -624,7 +630,14 @@ export const StorageService = {
         }
         for (const key of timerKeys) {
           const raw = stored.get(key);
-          if (raw && JSON.parse(raw)?.subjectId === subjectId) writes.push([key, 'null']);
+          if (raw) {
+            try {
+              const parsedTimer = JSON.parse(raw) as { subjectId?: string } | null;
+              if (parsedTimer?.subjectId === subjectId) writes.push([key, 'null']);
+            } catch {
+              // Ignore malformed timer state safely
+            }
+          }
         }
         await AsyncStorage.multiSet(writes);
         for (const [key] of writes) notifyStorageChange(key);
@@ -769,8 +782,14 @@ export const StorageService = {
       }
       for (const key of timerKeys) {
         const raw = stored.get(key);
-        const timer = raw ? JSON.parse(raw) : null;
-        if (timer?.subjectId && !ids.has(timer.subjectId)) writes.push([key, 'null']);
+        if (raw) {
+          try {
+            const timer = JSON.parse(raw) as { subjectId?: string } | null;
+            if (timer?.subjectId && !ids.has(timer.subjectId)) writes.push([key, 'null']);
+          } catch {
+            writes.push([key, 'null']);
+          }
+        }
       }
       if (writes.length) {
         await AsyncStorage.multiSet(writes);
@@ -1498,6 +1517,15 @@ export const StorageService = {
       AsyncStorage.getItem('@lumen_course_progress'),
     ]);
 
+    let parsedCourseProgress: CourseProgressData | undefined = undefined;
+    if (courseProgressRaw) {
+      try {
+        parsedCourseProgress = JSON.parse(courseProgressRaw) as CourseProgressData;
+      } catch {
+        parsedCourseProgress = undefined;
+      }
+    }
+
     const rawBackup: BackupData = {
       version: 2,
       timestamp: new Date().toISOString(),
@@ -1512,7 +1540,7 @@ export const StorageService = {
       aaccActivities,
       groupProjects,
       gamification,
-      courseProgress: courseProgressRaw ? JSON.parse(courseProgressRaw) : undefined,
+      courseProgress: parsedCourseProgress,
     };
 
     // Deep sanitize backup to guarantee zero credential leakage (API keys, tokens, secrets)

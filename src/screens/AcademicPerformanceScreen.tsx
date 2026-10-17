@@ -24,6 +24,7 @@ import { AIParsingService, resolveDocumentMimeType } from '../services/AIParsing
 import { StorageService } from '../services/storage';
 import { useApp } from '../contexts/AppContext';
 import { getCurrentSemesterId } from '../utils';
+import { calculateFinalGrade } from '../components/GradeEngine';
 
 interface AcademicPerformanceScreenProps {
   subjects: Subject[];
@@ -297,6 +298,20 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
 
   const handleDeleteCurriculumSubject = (subjectId: string, subjectName: string) => {
     Haptics.selectionAsync();
+    const executeDelete = async () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const updated = CourseCRService.removeSubjectFromCurriculum(courseData, subjectId, subjectName);
+      setCourseData(updated);
+      await CourseCRService.saveCourseProgress(updated);
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`Deseja remover "${subjectName}" do seu fluxograma de desempenho?`)) {
+        void executeDelete();
+      }
+      return;
+    }
+
     Alert.alert(
       'Excluir Disciplina',
       `Deseja remover "${subjectName}" do seu fluxograma de desempenho?`,
@@ -305,12 +320,7 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: async () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            const updated = CourseCRService.removeSubjectFromCurriculum(courseData, subjectId, subjectName);
-            setCourseData(updated);
-            await CourseCRService.saveCourseProgress(updated);
-          }
+          onPress: executeDelete
         }
       ]
     );
@@ -326,6 +336,46 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
     }
 
     const currentPeriodId = getCurrentSemesterId();
+    const executeCloseSemester = async () => {
+      try {
+        const passGrade = 7.0;
+        const updated = CourseCRService.closeActiveSemester(
+          courseData,
+          safeSubjects,
+          currentPeriodId,
+          passGrade
+        );
+
+        setCourseData(updated);
+        await CourseCRService.saveCourseProgress(updated);
+
+        // Arquiva as matérias no AppContext se disponível
+        const activeSubjectIds = safeSubjects.map(s => s.id);
+        if (appContext?.archiveSubjects) {
+          await appContext.archiveSubjects(activeSubjectIds);
+        } else if (appContext?.archiveSubject) {
+          for (const id of activeSubjectIds) {
+            await appContext.archiveSubject(id);
+          }
+        }
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          'Semestre Consolidado!',
+          `O período ${currentPeriodId} foi fechado com sucesso! Seu novo CR Oficial Acumulado é ${updated.baselineCR?.toFixed(2) || '0.00'}.`
+        );
+      } catch (err: any) {
+        console.error('Erro ao fechar semestre:', err);
+        Alert.alert('Erro', 'Não foi possível fechar o semestre. Tente novamente.');
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`Deseja consolidar o semestre atual (${currentPeriodId}) com as notas finais calculadas de ${safeSubjects.length} matérias?\n\nAs disciplinas serão consolidadas no histórico definitivo do fluxograma e arquivadas no aplicativo.`)) {
+        void executeCloseSemester();
+      }
+      return;
+    }
 
     Alert.alert(
       '🎓 Fechar Semestre',
@@ -335,39 +385,7 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
         {
           text: 'Fechar Semestre',
           style: 'default',
-          onPress: async () => {
-            try {
-              const passGrade = 7.0;
-              const updated = CourseCRService.closeActiveSemester(
-                courseData,
-                safeSubjects,
-                currentPeriodId,
-                passGrade
-              );
-
-              setCourseData(updated);
-              await CourseCRService.saveCourseProgress(updated);
-
-              // Arquiva as matérias no AppContext se disponível
-              const activeSubjectIds = safeSubjects.map(s => s.id);
-              if (appContext?.archiveSubjects) {
-                await appContext.archiveSubjects(activeSubjectIds);
-              } else if (appContext?.archiveSubject) {
-                for (const id of activeSubjectIds) {
-                  await appContext.archiveSubject(id);
-                }
-              }
-
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert(
-                'Semestre Consolidado!',
-                `O período ${currentPeriodId} foi fechado com sucesso! Seu novo CR Oficial Acumulado é ${updated.baselineCR?.toFixed(2) || '0.00'}.`
-              );
-            } catch (err: any) {
-              console.error('Erro ao fechar semestre:', err);
-              Alert.alert('Erro', 'Não foi possível fechar o semestre. Tente novamente.');
-            }
-          }
+          onPress: executeCloseSemester
         }
       ]
     );
@@ -397,6 +415,20 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
   };
 
   const handleResetToTemplate = () => {
+    const executeReset = async () => {
+      setCourseData(DEFAULT_CURRICULUM_TEMPLATE);
+      await CourseCRService.saveCourseProgress(DEFAULT_CURRICULUM_TEMPLATE);
+      setIsImportModalVisible(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm('Deseja redefinir a grade para o modelo padrão da graduação?')) {
+        void executeReset();
+      }
+      return;
+    }
+
     Alert.alert(
       'Restaurar Padrão',
       'Deseja redefinir a grade para o modelo padrão da graduação?',
@@ -405,12 +437,7 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
         {
           text: 'Restaurar',
           style: 'destructive',
-          onPress: async () => {
-            setCourseData(DEFAULT_CURRICULUM_TEMPLATE);
-            await CourseCRService.saveCourseProgress(DEFAULT_CURRICULUM_TEMPLATE);
-            setIsImportModalVisible(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          }
+          onPress: executeReset
         }
       ]
     );
@@ -608,20 +635,8 @@ export const AcademicPerformanceScreen: React.FC<AcademicPerformanceScreenProps>
               </View>
             ) : (
               safeSubjects.map(sub => {
-                let avg = sub.passGrade || 7.0;
-                if (sub.gradeGroups && sub.gradeGroups.length > 0) {
-                  let totalWeight = 0;
-                  let weightedSum = 0;
-                  sub.gradeGroups.forEach(g => {
-                    if (g && g.items && g.items.length > 0) {
-                      const itemSum = g.items.reduce((acc, it) => acc + (it.grade || 0), 0);
-                      const groupScore = (itemSum / g.items.length) * (g.weight / 100);
-                      weightedSum += groupScore;
-                      totalWeight += g.weight;
-                    }
-                  });
-                  avg = totalWeight > 0 ? (weightedSum / (totalWeight / 100)) : (sub.passGrade || 7.0);
-                }
+                const engineResult = calculateFinalGrade(sub.gradeGroups, sub.passGrade || 7.0);
+                const avg = engineResult.totalItemsCount > 0 ? engineResult.score : 0;
 
                 const finalCalc = CourseCRService.calculateFinalExamRequirement(avg, sub.passGrade || 7.0);
 

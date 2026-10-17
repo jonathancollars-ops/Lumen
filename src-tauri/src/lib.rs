@@ -15,6 +15,7 @@ pub fn run() {
       google_oauth::exchange_google_oauth,
       google_oauth::focus_lumen_window,
       desktop_updater::download_and_run_desktop_installer,
+      desktop_updater::cancel_desktop_installer_download,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

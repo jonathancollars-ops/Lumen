@@ -335,7 +335,24 @@ export function AppNavigator() {
     }, [pulseAnim]);
 
     if (isDesktop) {
-      const isCloudSyncing = Boolean(cloudSyncStatus?.isSyncing || cloudSyncStatus?.state === 'syncing');
+      const syncState = cloudSyncStatus?.state;
+      const isCloudSyncing = Boolean(cloudSyncStatus?.isSyncing || syncState === 'syncing');
+      const isCloudError = syncState === 'error';
+      const isCloudDisconnected = !syncState || syncState === 'disconnected';
+      const syncDotColor = isCloudSyncing
+        ? colors.warning
+        : isCloudError
+          ? colors.danger
+          : isCloudDisconnected
+            ? (colors.textMuted || colors.textSecondary)
+            : colors.success;
+      const syncStatusLabel = isCloudSyncing
+        ? 'Sincronizando com a nuvem...'
+        : isCloudError
+          ? (cloudSyncStatus?.message || 'Erro na sincronização com a nuvem')
+          : isCloudDisconnected
+            ? 'Cloud Sync Desconectado (Clique para sincronizar)'
+            : 'Cloud Sync Conectado (Clique para sincronizar)';
 
       return (
         <View
@@ -465,17 +482,17 @@ export function AppNavigator() {
                 }}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={isCloudSyncing ? 'Sincronizando com a nuvem...' : 'Cloud Sync Conectado'}
+                accessibilityLabel={syncStatusLabel}
                 // @ts-ignore
-                title={isCloudSyncing ? 'Sincronizando com a nuvem...' : 'Cloud Sync Conectado (Clique para sincronizar)'}
+                title={syncStatusLabel}
               >
                 <Text style={{ fontSize: 13 }}>☁️</Text>
                 <Animated.View
                   style={[
                     styles.sidebarSyncDot,
                     {
-                      backgroundColor: isCloudSyncing ? colors.warning : colors.success,
-                      opacity: pulseAnim,
+                      backgroundColor: syncDotColor,
+                      opacity: isCloudSyncing ? pulseAnim : 1,
                     }
                   ]}
                 />

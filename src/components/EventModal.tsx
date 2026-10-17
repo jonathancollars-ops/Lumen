@@ -200,7 +200,11 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
       recurrence,
       recurrenceInterval: safeRecurrenceInterval,
       recurrenceUnit: recurrence === 'monthly' ? 'months' : recurrence === 'custom_interval' ? initialEvent?.recurrenceUnit : undefined,
-      recurrenceDays: recurrence === 'weekly' ? initialEvent?.recurrenceDays : undefined,
+      recurrenceDays: recurrence === 'weekly'
+        ? (initialEvent?.recurrenceDays && initialEvent.recurrenceDays.length > 0 && initialEvent.date === date
+            ? initialEvent.recurrenceDays
+            : [new Date(`${date}T12:00:00`).getDay()].filter(d => !isNaN(d)))
+        : undefined,
       recurrenceMonthDay: safeRecurrenceMonthDay,
       alerts: safeAlerts,
       isCompleted: initialEvent ? initialEvent.isCompleted : false,
@@ -212,6 +216,22 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
 
   const handleDelete = () => {
     if (!initialEvent || !onDelete) return;
+    const executeDelete = () => {
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        onDelete(initialEvent.id);
+      } catch (e) {
+        console.warn('Erro ao excluir compromisso:', e);
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`Tem certeza que deseja excluir "${initialEvent.title || 'este compromisso'}"?`)) {
+        executeDelete();
+      }
+      return;
+    }
+
     Alert.alert(
       'Excluir Compromisso',
       `Tem certeza que deseja excluir "${initialEvent.title || 'este compromisso'}"?`,
@@ -220,14 +240,7 @@ export const EventModal: React.FC<EventModalProps> = ({ visible, onClose, onSave
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => {
-            try {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              onDelete(initialEvent.id);
-            } catch (e) {
-              console.warn('Erro ao excluir compromisso:', e);
-            }
-          }
+          onPress: executeDelete
         }
       ]
     );

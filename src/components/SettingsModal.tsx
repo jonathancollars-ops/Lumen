@@ -236,19 +236,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteSemester = (semId: string) => {
+    const executeDelete = () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      const updated = safeSemesters.filter(s => s.id !== semId);
+      if (onUpdateSemesters) {
+        onUpdateSemesters(updated);
+      }
+      StorageService.saveSemesters(updated);
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm('Deseja remover este semestre da lista?')) {
+        executeDelete();
+      }
+      return;
+    }
+
     Alert.alert('Excluir Semestre', 'Deseja remover este semestre da lista?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Excluir',
         style: 'destructive',
-        onPress: () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          const updated = safeSemesters.filter(s => s.id !== semId);
-          if (onUpdateSemesters) {
-            onUpdateSemesters(updated);
-          }
-          StorageService.saveSemesters(updated);
-        }
+        onPress: executeDelete
       }
     ]);
   };
@@ -382,6 +391,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDisconnectGoogle = () => {
+    const executeDisconnect = async () => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      await GoogleAuthService.signOut();
+      setFirebaseUser(null);
+      Alert.alert('Desconectado', 'Sua conta Google foi desconectada.');
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm('Deseja desconectar sua conta? Seus dados locais permanecerão salvos no aparelho.')) {
+        void executeDisconnect();
+      }
+      return;
+    }
+
     Alert.alert(
       'Desconectar Google',
       'Deseja desconectar sua conta? Seus dados locais permanecerão salvos no aparelho.',
@@ -390,12 +413,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {
           text: 'Desconectar',
           style: 'destructive',
-          onPress: async () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            await GoogleAuthService.signOut();
-            setFirebaseUser(null);
-            Alert.alert('Desconectado', 'Sua conta Google foi desconectada.');
-          }
+          onPress: executeDisconnect
         }
       ]
     );

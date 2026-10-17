@@ -75,6 +75,13 @@ export class SecuritySanitizer {
           return '';
         }
       })
+      // Strip dangerous tags or event handlers that may have been encoded as HTML entities
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, ' ')
+      .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, ' ')
+      .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, ' ')
+      .replace(/<\/?(?:script|style|iframe|object|embed|svg|img|body|input|a|meta|link|form|button|video|audio|base|applet)\b[^>]*>/gi, ' ')
       // Strip control characters
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
       // Collapse whitespace

@@ -311,8 +311,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCloudSyncStatus({ state: 'disconnected', message: 'Conecte a mesma conta Google nos dois dispositivos.' });
       await loaded;
       if (!mounted || revision !== authRevision || !user) return;
+      const isDesktopRuntime = typeof window !== 'undefined' && Boolean((window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ || (window as unknown as Record<string, unknown>).__TAURI__);
+      const syncPlatform = isDesktopRuntime ? 'windows' : (Platform.OS === 'android' ? 'android' : 'web');
       const engine = new CloudSyncEngine(
-        user.uid, Platform.OS === 'android' ? 'android' : 'web',
+        user.uid, syncPlatform,
         () => reloadRef.current(),
         status => { if (mounted && revision === authRevision) setCloudSyncStatus(status); },
       );
