@@ -27,6 +27,7 @@ export const AgendaScreenWrapper = ({ onFabPress }: { onFabPress?: () => void })
     theme, settings, gamification, semesters,
     toggleEventCompletion,
     toggleTaskCompletion,
+    updateAttendance,
     deleteEvent,
     addOrUpdateEvent,
     addOrUpdateSubject
@@ -173,11 +174,11 @@ export const AgendaScreenWrapper = ({ onFabPress }: { onFabPress?: () => void })
             if (id) {
               await deleteEvent(id);
             }
-          } catch (e) {
-            console.warn('Erro ao excluir evento:', e);
-          } finally {
             setEventModalVisible(false);
             setEditingEvent(null);
+          } catch (e) {
+            console.warn('Erro ao excluir evento:', e);
+            Alert.alert('Não foi possível excluir', 'O evento foi mantido. Tente novamente.');
           }
         }}
         theme={theme}
@@ -196,9 +197,10 @@ export const AgendaScreenWrapper = ({ onFabPress }: { onFabPress?: () => void })
         theme={theme}
         onUpdateStatus={async (id, status) => {
           try {
-            const updated = attendances.map(a => a && a.id === id ? { ...a, status } : a);
-            setAttendances(updated);
-            await StorageService.saveAttendances(updated);
+            const record = attendances.find(a => a && a.id === id);
+            if (!record) return;
+            await updateAttendance({ ...record, status });
+            const updated = await StorageService.getAttendances();
             if (updated.filter(a => a && a.status === 'pending').length === 0) {
               setAttendanceModalVisible(false);
             }

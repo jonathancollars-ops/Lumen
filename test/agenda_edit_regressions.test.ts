@@ -10,7 +10,7 @@ import { StorageService } from '../src/services/storage';
 import { NotificationService } from '../src/services/notifications';
 import { calculateDaySchedule } from '../src/utils/schedulePlanner';
 import { AppEvent } from '../src/types';
-import { lastAlertCalls } from './setup_env';
+import { lastAlertCalls, mockAsyncStorage } from './setup_env';
 
 // Execute actual component callbacks without a native renderer. This harness
 // models state and effect dependencies; it does not verify native layout.
@@ -134,19 +134,19 @@ async function main() {
 
   const scheduled: AppEvent[] = [];
   const originalSchedule = NotificationService.scheduleEventNotifications;
-  const originalSave = StorageService.saveEvents;
+  const originalWrite = mockAsyncStorage.setItem;
   try {
     NotificationService.scheduleEventNotifications = async event => { scheduled.push(event); };
     await value.addOrUpdateEvent(base);
     value = provider.render().props.value;
     assert.deepEqual(await StorageService.getEvents(), [base]);
     assert.deepEqual(scheduled, [base]);
-    StorageService.saveEvents = async () => false;
+    mockAsyncStorage.setItem = async () => { throw new Error('Disk failure fixture'); };
     await assert.rejects(value.addOrUpdateEvent({ ...base, title: 'Failed write' }));
     assert.equal(provider.render().props.value.events[0].title, base.title);
     assert.equal(scheduled.length, 1, 'Failed writes do not schedule reminders');
   } finally {
-    StorageService.saveEvents = originalSave;
+    mockAsyncStorage.setItem = originalWrite;
     NotificationService.scheduleEventNotifications = originalSchedule;
   }
 

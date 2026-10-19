@@ -15,9 +15,9 @@ export const StudyScreenWrapper = () => {
     events, 
     setEvents, 
     tasks, 
-    setTasks, 
+    updateTasks,
     studySessions, 
-    setStudySessions, 
+    addStudySession,
     streak, 
     attendances, 
     theme, 
@@ -41,9 +41,9 @@ export const StudyScreenWrapper = () => {
       <StudyScreen
         subjects={subjects}
         tasks={tasks}
-        onUpdateTasks={(updated) => setTasks(updated)}
+        onUpdateTasks={updateTasks}
         sessions={studySessions}
-        onAddSession={(session) => setStudySessions([...studySessions, session])}
+        onAddSession={addStudySession}
         theme={theme}
         focusMinutesDefault={settings.pomodoroFocusMin}
         breakMinutesDefault={settings.pomodoroBreakMin}

@@ -288,6 +288,7 @@ export function setMockAuthRequestPromptResult(result: any) {
 }
 
 export const mockAuthSession = {
+  useAuthRequest: () => [null, null, async () => mockAuthRequestPromptResult],
   makeRedirectUri: (options?: any) => (options?.scheme ? `${options.scheme}://oauthredirect` : 'http://localhost:8081'),
   startAsync: async (options: any) => ({
     type: 'success',

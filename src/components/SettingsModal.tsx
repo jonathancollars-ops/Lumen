@@ -160,6 +160,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
 
+  const persistSettings = async (updated: AppSettings): Promise<boolean> => {
+    if (!(await StorageService.saveSettings(updated))) {
+      Alert.alert('Não foi possível salvar', 'Suas configurações foram mantidas no formulário. Tente novamente.');
+      return false;
+    }
+    onUpdateSettings?.(updated);
+    return true;
+  };
+
   const handleSaveSettings = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
@@ -188,16 +197,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       hapticsEnabled,
       examWeekMode,
     };
-    if (onUpdateSettings) {
-      onUpdateSettings(updated);
-    }
-    await StorageService.saveSettings(updated);
-    Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
+    if (await persistSettings(updated)) Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
   };
 
   const safeSemesters = Array.isArray(semesters) ? semesters : [];
 
-  const handleAddSemester = () => {
+  const persistSemesters = async (updated: Semester[]): Promise<boolean> => {
+    if (!(await StorageService.saveSemesters(updated))) {
+      Alert.alert('Não foi possível salvar', 'Não foi possível atualizar os semestres. Tente novamente.');
+      return false;
+    }
+    onUpdateSemesters?.(updated);
+    return true;
+  };
+
+  const handleAddSemester = async () => {
     if (!newSemesterName.trim()) return;
     Haptics.selectionAsync();
     const newSem: Semester = {
@@ -207,42 +221,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       isArchived: false,
     };
     const updated = [...safeSemesters, newSem];
-    if (onUpdateSemesters) {
-      onUpdateSemesters(updated);
-    }
-    StorageService.saveSemesters(updated);
-    setNewSemesterName('');
+    if (await persistSemesters(updated)) setNewSemesterName('');
   };
 
-  const toggleCurrentSemester = (semId: string) => {
+  const toggleCurrentSemester = async (semId: string) => {
     Haptics.selectionAsync();
     const updated = safeSemesters.map(s => ({
       ...s,
       isCurrent: s.id === semId
     }));
-    if (onUpdateSemesters) {
-      onUpdateSemesters(updated);
-    }
-    StorageService.saveSemesters(updated);
+    await persistSemesters(updated);
   };
 
-  const toggleArchiveSemester = (semId: string) => {
+  const toggleArchiveSemester = async (semId: string) => {
     Haptics.selectionAsync();
     const updated = safeSemesters.map(s => s.id === semId ? { ...s, isArchived: !s.isArchived } : s);
-    if (onUpdateSemesters) {
-      onUpdateSemesters(updated);
-    }
-    StorageService.saveSemesters(updated);
+    await persistSemesters(updated);
   };
 
   const handleDeleteSemester = (semId: string) => {
-    const executeDelete = () => {
+    const executeDelete = async () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       const updated = safeSemesters.filter(s => s.id !== semId);
-      if (onUpdateSemesters) {
-        onUpdateSemesters(updated);
-      }
-      StorageService.saveSemesters(updated);
+      await persistSemesters(updated);
     };
 
     if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
@@ -555,12 +556,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </View>
                   <Switch
                     value={fullscreen}
-                    onValueChange={(val) => {
+                    onValueChange={async (val) => {
                       Haptics.selectionAsync();
-                      setFullscreen(val);
                       const updated: AppSettings = { ...settings, fullscreen: val };
-                      onUpdateSettings(updated);
-                      StorageService.saveSettings(updated);
+                      if (await persistSettings(updated)) setFullscreen(val);
                     }}
                     trackColor={{ false: colors.border, true: colors.primary }}
                     thumbColor={fullscreen ? '#fff' : '#f4f3f4'}

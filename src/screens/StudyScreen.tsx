@@ -26,9 +26,9 @@ import * as Haptics from 'expo-haptics';
 interface Props {
   subjects: Subject[];
   tasks: StudyTask[];
-  onUpdateTasks: (tasks: StudyTask[]) => void;
+  onUpdateTasks: (tasks: StudyTask[]) => void | Promise<void>;
   sessions: StudySession[];
-  onAddSession: (session: StudySession) => void;
+  onAddSession: (session: StudySession) => void | Promise<void>;
   theme: ThemeType;
   focusMinutesDefault?: number;
   breakMinutesDefault?: number;
@@ -94,6 +94,9 @@ export const StudyScreen: React.FC<Props> = ({
   const stopwatchRef = useRef<NodeJS.Timeout | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const taskInputRef = useRef<TextInput>(null);
+  const savingSessionRef = useRef(false);
+  const savingTasksRef = useRef(false);
+  const timerDefaultsRef = useRef({ focus: focusMinutesDefault, break: breakMinutesDefault });
 
   // Refs de sincronização resiliente contra stale closures no ciclo de vida (AppState)
   const isActiveRef = useRef(isActive);
@@ -173,51 +176,63 @@ export const StudyScreen: React.FC<Props> = ({
     forcedSubjectId?: string,
     forcedInitialDurationSec?: number
   ) => {
-    setIsActive(false);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    await NotificationService.cancelTimerNotification();
-    
-    const breakStatus = typeof forcedIsBreak === 'boolean' ? forcedIsBreak : isBreak;
-    const subId = forcedSubjectId || selectedSubjectId || (subjects.length > 0 ? subjects[0].id : 'general');
-    
-    if (!breakStatus) {
-      const sessionDurationMin = forcedInitialDurationSec 
-        ? Math.max(1, Math.round(forcedInitialDurationSec / 60))
-        : (activeFocusMinutes || focusMinutesDefault);
-      const newSession: StudySession = {
-        id: generateId('sess'),
-        subjectId: subId,
-        durationMs: sessionDurationMin * 60 * 1000,
-        date: getLocalDateString(),
-        startTime: new Date().toISOString(),
-      };
-      onAddSession(newSession);
-      await updateStreakOnSessionSaved();
-      const updatedGamification = await StorageService.addXP(50, sessionDurationMin);
-      setGamification(updatedGamification);
-      appContext?.setGamification?.(updatedGamification);
-      showToast(`🎉 Sessão de ${sessionDurationMin}min concluída! (+50 XP) Hora do descanso.`, 'success');
-      setIsBreak(true);
-      setTimeLeft(breakMinutesDefault * 60);
-
-      if (appContext?.saveActiveTimer) {
-        await appContext.saveActiveTimer(null);
-      } else {
-        await StorageService.saveActiveTimer(null);
+    if (savingSessionRef.current) return;
+    savingSessionRef.current = true;
+    try {
+      setIsActive(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
       }
-    } else {
-      showToast('⚡ Descanso finalizado! Hora de retomar o foco.', 'info');
-      setIsBreak(false);
-      setTimeLeft((activeFocusMinutes || focusMinutesDefault) * 60);
+      await NotificationService.cancelTimerNotification();
 
-      if (appContext?.saveActiveTimer) {
-        await appContext.saveActiveTimer(null);
+      const breakStatus = typeof forcedIsBreak === 'boolean' ? forcedIsBreak : isBreak;
+      const subId = forcedSubjectId || selectedSubjectId || (subjects.length > 0 ? subjects[0].id : 'general');
+
+      if (!breakStatus) {
+        const sessionDurationMin = forcedInitialDurationSec
+          ? Math.max(1, Math.round(forcedInitialDurationSec / 60))
+          : (activeFocusMinutes || focusMinutesDefault);
+        const newSession: StudySession = {
+          id: generateId('sess'),
+          subjectId: subId,
+          durationMs: sessionDurationMin * 60 * 1000,
+          date: getLocalDateString(),
+          startTime: new Date().toISOString(),
+        };
+        try {
+          await onAddSession(newSession);
+        } catch (error) {
+          console.warn('[StudyScreen] Erro ao salvar sessão de Pomodoro:', error);
+          showToast('Não foi possível salvar a sessão. Toque em Iniciar Foco para tentar novamente.', 'warning');
+          return;
+        }
+        await updateStreakOnSessionSaved();
+        const updatedGamification = await StorageService.addXP(50, sessionDurationMin);
+        setGamification(updatedGamification);
+        appContext?.setGamification?.(updatedGamification);
+        showToast(`🎉 Sessão de ${sessionDurationMin}min concluída! (+50 XP) Hora do descanso.`, 'success');
+        setIsBreak(true);
+        setTimeLeft(breakMinutesDefault * 60);
+
+        if (appContext?.saveActiveTimer) {
+          await appContext.saveActiveTimer(null);
+        } else {
+          await StorageService.saveActiveTimer(null);
+        }
       } else {
-        await StorageService.saveActiveTimer(null);
+        showToast('⚡ Descanso finalizado! Hora de retomar o foco.', 'info');
+        setIsBreak(false);
+        setTimeLeft((activeFocusMinutes || focusMinutesDefault) * 60);
+
+        if (appContext?.saveActiveTimer) {
+          await appContext.saveActiveTimer(null);
+        } else {
+          await StorageService.saveActiveTimer(null);
+        }
       }
+    } finally {
+      savingSessionRef.current = false;
     }
   };
 
@@ -344,6 +359,9 @@ export const StudyScreen: React.FC<Props> = ({
 
       if (restored.mode === 'pomodoro') {
         const targetDuration = restored.targetDuration ?? restored.initialDuration ?? (25 * 60);
+        if (!restored.isBreak) setActiveFocusMinutes(targetDuration / 60);
+        setIsBreak(Boolean(restored.isBreak));
+        if (restored.subjectId) setSelectedSubjectId(restored.subjectId);
         const remaining = typeof restored.remainingSeconds === 'number'
           ? restored.remainingSeconds
           : Math.max(0, targetDuration - (restored.accumulatedSeconds || 0));
@@ -356,18 +374,9 @@ export const StudyScreen: React.FC<Props> = ({
           setIsActive(false);
           setTimeLeft(0);
           await handlePomodoroComplete(restored.isBreak, restored.subjectId, restored.initialDuration);
-          if (appContext?.clearTimerState) {
-            await appContext.clearTimerState();
-          } else {
-            await TimerService.clearTimerState();
-          }
         } else if (restored.isRunning) {
           setTimeLeft(remaining);
           setIsActive(true);
-          setIsBreak(Boolean(restored.isBreak));
-          if (restored.subjectId) {
-            setSelectedSubjectId(restored.subjectId);
-          }
           if (timerRef.current) {
             clearInterval(timerRef.current);
           }
@@ -384,10 +393,6 @@ export const StudyScreen: React.FC<Props> = ({
           }
           setTimeLeft(remaining);
           setIsActive(false);
-          setIsBreak(Boolean(restored.isBreak));
-          if (restored.subjectId) {
-            setSelectedSubjectId(restored.subjectId);
-          }
         }
       } else if (restored.mode === 'stopwatch') {
         const elapsed = typeof restored.accumulatedSeconds === 'number'
@@ -504,10 +509,12 @@ export const StudyScreen: React.FC<Props> = ({
     }
   }, [subjects]);
 
-  // Dynamic sync: when focusMinutesDefault or breakMinutesDefault change from Settings props,
-  // update timeLeft immediately if the timer is idle (!isActive).
+  // Apply settings only to an untouched timer; pausing/restoring must keep progress.
   useEffect(() => {
-    if (!isActive) {
+    const previous = timerDefaultsRef.current;
+    timerDefaultsRef.current = { focus: focusMinutesDefault, break: breakMinutesDefault };
+    const idleDuration = (isBreak ? previous.break : previous.focus) * 60;
+    if (!isActive && timeLeftRef.current === idleDuration) {
       if (!isBreak) {
         setActiveFocusMinutes(focusMinutesDefault);
         setTimeLeft(focusMinutesDefault * 60);
@@ -595,7 +602,7 @@ export const StudyScreen: React.FC<Props> = ({
         startedAt: now,
         targetEndTime,
         remainingSeconds: timeLeft,
-        initialDuration: (activeFocusMinutes || focusMinutesDefault) * 60,
+        initialDuration: (isBreak ? breakMinutesDefault : (activeFocusMinutes || focusMinutesDefault)) * 60,
         subjectId: subId,
         isBreak
       };
@@ -612,7 +619,7 @@ export const StudyScreen: React.FC<Props> = ({
         startedAt: now,
         targetEndTime: undefined,
         remainingSeconds: timeLeft,
-        initialDuration: (activeFocusMinutes || focusMinutesDefault) * 60,
+        initialDuration: (isBreak ? breakMinutesDefault : (activeFocusMinutes || focusMinutesDefault)) * 60,
         subjectId: subId,
         isBreak
       };
@@ -708,40 +715,51 @@ export const StudyScreen: React.FC<Props> = ({
   };
 
   const saveAndResetStopwatch = async () => {
+    if (savingSessionRef.current) return;
     if (stopwatchSeconds < 30) {
       showToast('Estude por pelo menos 30 segundos para salvar a sessão.', 'warning');
       return;
     }
+    savingSessionRef.current = true;
+    try {
+      const subId = stopwatchSubjectId || (subjects.length > 0 ? subjects[0].id : 'general');
 
-    const subId = stopwatchSubjectId || (subjects.length > 0 ? subjects[0].id : 'general');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const newSession: StudySession = {
+        id: generateId('sess'),
+        subjectId: subId,
+        durationMs: stopwatchSeconds * 1000,
+        date: getLocalDateString(),
+        startTime: new Date().toISOString(),
+      };
+      try {
+        await onAddSession(newSession);
+      } catch (error) {
+        console.warn('[StudyScreen] Erro ao salvar sessão do cronômetro:', error);
+        showToast('Não foi possível salvar a sessão. Seu tempo foi mantido; tente novamente.', 'warning');
+        return;
+      }
+      await updateStreakOnSessionSaved();
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const newSession: StudySession = {
-      id: generateId('sess'),
-      subjectId: subId,
-      durationMs: stopwatchSeconds * 1000,
-      date: getLocalDateString(),
-      startTime: new Date().toISOString(),
-    };
-    onAddSession(newSession);
-    await updateStreakOnSessionSaved();
+      const minutes = Math.max(1, Math.floor(stopwatchSeconds / 60));
+      // Proportional XP: ~2 XP per minute, minimum 10 XP
+      const xpGained = Math.max(10, Math.round(minutes * 2));
+      const updatedGamification = await StorageService.addXP(xpGained, minutes);
+      setGamification(updatedGamification);
+      appContext?.setGamification?.(updatedGamification);
+      showToast(`🎉 Sessão de ${minutes} min salva! (+${xpGained} XP)`, 'success');
 
-    const minutes = Math.max(1, Math.floor(stopwatchSeconds / 60));
-    // Proportional XP: ~2 XP per minute, minimum 10 XP
-    const xpGained = Math.max(10, Math.round(minutes * 2));
-    const updatedGamification = await StorageService.addXP(xpGained, minutes);
-    setGamification(updatedGamification);
-    appContext?.setGamification?.(updatedGamification);
-    showToast(`🎉 Sessão de ${minutes} min salva! (+${xpGained} XP)`, 'success');
-
-    setIsStopwatchRunning(false);
-    setStopwatchSeconds(0);
-    if (appContext?.resetTimer) {
-      await appContext.resetTimer();
-    } else if (appContext?.saveActiveTimer) {
-      await appContext.saveActiveTimer(null);
-    } else {
-      await StorageService.saveActiveTimer(null);
+      setIsStopwatchRunning(false);
+      setStopwatchSeconds(0);
+      if (appContext?.resetTimer) {
+        await appContext.resetTimer();
+      } else if (appContext?.saveActiveTimer) {
+        await appContext.saveActiveTimer(null);
+      } else {
+        await StorageService.saveActiveTimer(null);
+      }
+    } finally {
+      savingSessionRef.current = false;
     }
   };
 
@@ -782,7 +800,22 @@ export const StudyScreen: React.FC<Props> = ({
   }, [sessions]);
 
   // Tarefas Handlers
-  const handleAddTask = () => {
+  const persistTasks = async (updated: StudyTask[]): Promise<boolean> => {
+    if (savingTasksRef.current) return false;
+    savingTasksRef.current = true;
+    try {
+      await onUpdateTasks(updated);
+      return true;
+    } catch (error) {
+      console.warn('[StudyScreen] Erro ao salvar tarefa:', error);
+      showToast('Não foi possível salvar a tarefa. Tente novamente.', 'warning');
+      return false;
+    } finally {
+      savingTasksRef.current = false;
+    }
+  };
+
+  const handleAddTask = async () => {
     if (!newTaskTitle.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const newTask: StudyTask = {
@@ -792,8 +825,7 @@ export const StudyScreen: React.FC<Props> = ({
       subjectId: taskSubjectId || undefined,
       priority: taskPriority,
     };
-    onUpdateTasks([...tasks, newTask]);
-    setNewTaskTitle('');
+    if (await persistTasks([...tasks, newTask])) setNewTaskTitle('');
   };
 
   const toggleTask = async (taskId: string) => {
@@ -801,7 +833,7 @@ export const StudyScreen: React.FC<Props> = ({
     const target = tasks.find(t => t.id === taskId);
     const willComplete = target ? !target.isCompleted : false;
     const updated = tasks.map(t => t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t);
-    onUpdateTasks(updated);
+    if (!(await persistTasks(updated))) return;
 
     if (willComplete) {
       const g = await StorageService.addXP(30);
@@ -811,10 +843,10 @@ export const StudyScreen: React.FC<Props> = ({
     }
   };
 
-  const deleteTask = (taskId: string) => {
+  const deleteTask = async (taskId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const updated = tasks.filter(t => t.id !== taskId);
-    onUpdateTasks(updated);
+    await persistTasks(updated);
   };
 
   const filteredTasks = useMemo(() => {

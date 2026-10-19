@@ -357,6 +357,19 @@ export function safeParseObject<T extends object>(raw: string | null | undefined
   }
 }
 
+// Apply edits to the latest data inside the same queue used by cloud restores.
+async function mutateStoredList<T>(key: string, update: (current: T[]) => T[]): Promise<T[]> {
+  return withStorageWrite(async () => {
+    const raw = await AsyncStorage.getItem(key);
+    const current = raw == null ? [] : JSON.parse(raw);
+    if (!Array.isArray(current)) throw new Error(`Dados inválidos em ${key}.`);
+    const updated = update(current);
+    await AsyncStorage.setItem(key, JSON.stringify(updated));
+    notifyStorageChange(key);
+    return updated;
+  });
+}
+
 export interface BackupValidationResult {
   isValid: boolean;
   errors: string[];
@@ -555,6 +568,10 @@ export const StorageService = {
       notifyStorageError({ key: EVENTS_KEY, error: e, isQuota: false });
       return false;
     }
+  },
+
+  async updateEvents(update: (current: AppEvent[]) => AppEvent[]): Promise<AppEvent[]> {
+    return mutateStoredList(EVENTS_KEY, update);
   },
 
   async getSubjects(): Promise<Subject[]> {
@@ -822,6 +839,10 @@ export const StorageService = {
     }
   },
 
+  async updateTasks(update: (current: StudyTask[]) => StudyTask[]): Promise<StudyTask[]> {
+    return mutateStoredList(TASKS_KEY, update);
+  },
+
   async getStudySessions(): Promise<StudySession[]> {
     try {
       const jsonValue = await AsyncStorage.getItem(STUDY_SESSIONS_KEY);
@@ -844,6 +865,18 @@ export const StorageService = {
       notifyStorageError({ key: STUDY_SESSIONS_KEY, error: e, isQuota: false });
       return false;
     }
+  },
+
+  async addStudySession(session: StudySession): Promise<void> {
+    await withStorageWrite(async () => {
+      // Read inside the sync write queue so a stale screen cannot replace the history.
+      const raw = await AsyncStorage.getItem(STUDY_SESSIONS_KEY);
+      const sessions: StudySession[] = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(sessions)) throw new Error('Histórico de estudos inválido.');
+      if (sessions.some(saved => saved.id === session.id)) return;
+      await AsyncStorage.setItem(STUDY_SESSIONS_KEY, JSON.stringify([...sessions, session]));
+      notifyStorageChange(STUDY_SESSIONS_KEY);
+    });
   },
 
   /**
@@ -1026,7 +1059,9 @@ export const StorageService = {
         pomodoroFocusMin: Math.max(1, Math.min(180, Number(settings?.pomodoroFocusMin) || DEFAULT_SETTINGS.pomodoroFocusMin)),
         pomodoroBreakMin: Math.max(1, Math.min(60, Number(settings?.pomodoroBreakMin) || DEFAULT_SETTINGS.pomodoroBreakMin)),
         pomodoroLongBreakMin: Math.max(1, Math.min(60, Number(settings?.pomodoroLongBreakMin) || DEFAULT_SETTINGS.pomodoroLongBreakMin)),
-        defaultPassGrade: Math.max(0, Math.min(10, Number(settings?.defaultPassGrade) || DEFAULT_SETTINGS.defaultPassGrade)),
+        defaultPassGrade: Number.isFinite(settings?.defaultPassGrade)
+          ? Math.max(0, Math.min(10, settings.defaultPassGrade))
+          : DEFAULT_SETTINGS.defaultPassGrade,
         examWeekMode: settings?.examWeekMode === true,
         soundEnabled: settings?.soundEnabled !== false,
         hapticsEnabled: settings?.hapticsEnabled !== false,
@@ -1697,6 +1732,7 @@ export const StorageService = {
       GAMIFICATION_KEY,
       AI_CONFIG_KEY,
       ACTIVE_TIMER_KEY,
+      '@organiza_timer_state',
       GOOGLE_CLIENT_ID_KEY,
       DESKTOP_CALENDAR_EXPANDED_KEY,
       '@organiza_local_ai_model_info',

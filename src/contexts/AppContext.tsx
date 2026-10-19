@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import * as Haptics from 'expo-haptics';
-import { AppState, Platform } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 import { StorageService } from '../services/storage';
 import { AttendanceService } from '../services/AttendanceService';
 import { NotificationService } from '../services/notifications';
@@ -87,6 +87,8 @@ export interface AppContextData {
   addOrUpdateSubject: (subject: Subject) => Promise<void>;
   addOrUpdateEvent: (event: AppEvent) => Promise<void>;
   updateAIConfig: (config: AIConfig) => Promise<boolean>;
+  addStudySession: (session: StudySession) => Promise<void>;
+  updateTasks: (updated: StudyTask[]) => Promise<void>;
 
   // Cloud Sync (Firebase Firestore)
   triggerDebouncedCloudSync: () => void;
@@ -438,23 +440,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const toggleEventCompletion = async (eventId: string) => {
-    const updatedEvents = events.map(e => e.id === eventId ? { ...e, isCompleted: !e.isCompleted } : e);
-    setEvents(updatedEvents);
-    await StorageService.saveEvents(updatedEvents);
-    triggerDebouncedCloudSync();
+    try {
+      const updated = await StorageService.updateEvents(current =>
+        current.map(e => e.id === eventId ? { ...e, isCompleted: !e.isCompleted } : e));
+      ++loadRevision.current;
+      setEvents(updated);
+      triggerDebouncedCloudSync();
+    } catch (error) {
+      console.warn('Erro ao atualizar evento:', error);
+      Alert.alert('Não foi possível salvar', 'O evento foi mantido como estava. Tente novamente.');
+    }
   };
 
   const toggleTaskCompletion = async (taskId: string) => {
-    const updatedTasks = tasks.map(t => t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t);
-    setTasks(updatedTasks);
-    await StorageService.saveTasks(updatedTasks);
-    triggerDebouncedCloudSync();
+    try {
+      const updated = await StorageService.updateTasks(current =>
+        current.map(t => t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t));
+      ++loadRevision.current;
+      setTasks(updated);
+      triggerDebouncedCloudSync();
+    } catch (error) {
+      console.warn('Erro ao atualizar tarefa:', error);
+      Alert.alert('Não foi possível salvar', 'A tarefa foi mantida como estava. Tente novamente.');
+    }
   };
 
   const deleteEvent = async (eventId: string) => {
-    const updatedEvents = events.filter(e => e.id !== eventId);
+    const updatedEvents = await StorageService.updateEvents(current => current.filter(e => e.id !== eventId));
+    ++loadRevision.current;
     setEvents(updatedEvents);
-    await StorageService.saveEvents(updatedEvents);
     await NotificationService.cancelEventNotifications(eventId);
     triggerDebouncedCloudSync();
   };
@@ -550,12 +564,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addOrUpdateEvent = async (event: AppEvent) => {
-    const exists = events.find(e => e.id === event.id);
-    const updated = exists
-      ? events.map(e => e.id === event.id ? event : e)
-      : [...events, event];
-    const saved = await StorageService.saveEvents(updated);
-    if (!saved) throw new Error('Não foi possível salvar o evento.');
+    const updated = await StorageService.updateEvents(current => current.some(e => e.id === event.id)
+      ? current.map(e => e.id === event.id ? event : e)
+      : [...current, event]);
+    ++loadRevision.current;
     setEvents(updated);
     await NotificationService.scheduleEventNotifications(event, attendances);
     triggerDebouncedCloudSync();
@@ -572,6 +584,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       console.error('AppContext: Error updating AI config:', err);
       return false;
     }
+  };
+
+  const addStudySession = async (session: StudySession): Promise<void> => {
+    await StorageService.addStudySession(session);
+    // Discard hydration that read the history before this session was committed.
+    ++loadRevision.current;
+    setStudySessions(await StorageService.getStudySessions());
+    triggerDebouncedCloudSync();
+  };
+
+  const updateTasks = async (updated: StudyTask[]): Promise<void> => {
+    if (!(await StorageService.saveTasks(updated))) throw new Error('Não foi possível salvar as tarefas.');
+    ++loadRevision.current;
+    setTasks(updated);
+    triggerDebouncedCloudSync();
   };
 
   const value: AppContextData = {
@@ -609,6 +636,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addOrUpdateSubject,
     addOrUpdateEvent,
     updateAIConfig,
+    addStudySession,
+    updateTasks,
     triggerDebouncedCloudSync,
     syncCloudNow,
     firebaseUserId,
