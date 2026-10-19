@@ -11,6 +11,24 @@ e este projeto adere ao [Versionamento Semântico (SemVer)](https://semver.org/l
 - **Minor (+0.1.0, ex: 3.2.0)**: Novos recursos, novas telas, funcionalidades adicionais sem quebra de compatibilidade. (Zera o patch).
 - **Major (+1.0.0, ex: 4.0.0)**: Grandes reformulações de arquitetura, redesign completo ou mudanças estruturais profundas. (Zera minor e patch).
 
+## [3.7.11] - 2026-10-19
+### Persistência de estudos e proteção de concorrência
+- Salva previamente sessões Pomodoro, cronômetro e tarefas de estudo antes da confirmação visual e concessão de XP.
+- Mantém o progresso do temporizador e entradas de formulário caso a gravação no armazenamento falhe.
+- Serializa mutações de eventos e tarefas contra os dados mais recentes do armazenamento, preserva confirmações rápidas de presença e limpa os dois formatos de timer ao redefinir os dados.
+- Adiciona suíte de testes de regressão para persistência, edições concorrentes e tolerância a falhas de gravação.
+
+### Segurança e robustez do sistema
+- Implementa Content Security Policy (CSP) restritiva no Tauri Desktop para mitigar riscos de injeção e execução não autorizada.
+- Adiciona allowlist de hosts HTTPS confiáveis e cancelamento atômico de downloads com exclusão de arquivos temporários no atualizador desktop.
+- Reforça a sanitização de HTML contra bypass de dupla decodificação, preservando formatações legítimas.
+- Validação estrutural de escrita nas regras do Firestore e diálogo de confirmação adaptativo (`window.confirm`) para ações destrutivas no desktop e web.
+
+### Calendário, frequência e sincronização
+- Corrige cálculo de frequência na agenda para considerar apenas aulas com status confirmado.
+- Suporta marcação de todas as ocorrências de dias selecionados em eventos com recorrência semanal.
+- Sincroniza o indicador de status do Cloud Sync e identifica a plataforma Windows no motor de sincronização.
+
 ## [3.7.10] - 2026-10-10
 ### Calendário e navegação no Windows Desktop
 - Permite recolher e expandir o calendário mensal no desktop e recorda a preferência do usuário entre reinicializações e trocas de abas.
